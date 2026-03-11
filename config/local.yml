@@ -1,0 +1,13 @@
+env: "local"
+
+grpc:
+  port: 60005
+  timeout: 10h
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  name: "sso_service"
+  ssl_mode: "disable"
