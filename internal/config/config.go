@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"os"
-	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
@@ -16,8 +15,13 @@ type Config struct {
 }
 
 type GRPC struct {
-	Port    int           `yaml:"port"`
-	Timeout time.Duration `yaml:"timeout"`
+	Admin   ServiceConfig `yaml:"admin"`
+	Booking ServiceConfig `yaml:"booking"`
+	Public  ServiceConfig `yaml:"public"`
+}
+
+type ServiceConfig struct {
+	Port int `yaml:"port"`
 }
 
 type Database struct {

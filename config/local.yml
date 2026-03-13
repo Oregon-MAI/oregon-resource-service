@@ -1,8 +1,12 @@
 env: "local"
 
 grpc:
-  port: 60005
-  timeout: 10h
+  admin:
+    port: 60007
+  booking:
+    port: 60008
+  public:
+    port: 60009
 
 database:
   host: "localhost"
