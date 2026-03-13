@@ -6,10 +6,10 @@ import (
 
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/domain/models"
+	"github.com/acyushka/oregon-resource-service/internal/grpc/resource/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ResourceServiceBooking interface {
@@ -41,7 +41,7 @@ func (s *ServerAPI) GetResource(ctx context.Context, in *resourcev1.GetResourceR
 		return nil, status.Error(codes.Internal, "failed to retrieve resource")
 	}
 
-	return &resourcev1.GetResourceResponse{Resource: mapServiceResourceToProto(resource)}, nil
+	return &resourcev1.GetResourceResponse{Resource: utils.MapServiceResourceToProto(resource)}, nil
 }
 
 func (s *ServerAPI) CheckResourceStatus(ctx context.Context, in *resourcev1.CheckResourceStatusRequest) (*resourcev1.CheckResourceStatusResponse, error) {
@@ -59,7 +59,7 @@ func (s *ServerAPI) CheckResourceStatus(ctx context.Context, in *resourcev1.Chec
 
 	return &resourcev1.CheckResourceStatusResponse{
 		IsAvailable: isAvailable,
-		Status:      serviceStatusToProto(resourceStatus),
+		Status:      utils.ServiceStatusToProto(resourceStatus),
 	}, nil
 }
 
@@ -76,7 +76,7 @@ func (s *ServerAPI) GetAvailableResources(ctx context.Context, in *resourcev1.Ge
 
 	protoResources := make([]*resourcev1.Resource, len(resources))
 	for i, res := range resources {
-		protoResources[i] = mapServiceResourceToProto(res)
+		protoResources[i] = utils.MapServiceResourceToProto(res)
 	}
 
 	return &resourcev1.GetAvailableResourcesResponse{
@@ -103,76 +103,6 @@ func (s *ServerAPI) UpdateResourceOccupancy(ctx context.Context, in *resourcev1.
 
 	return &resourcev1.UpdateResourceOccupancyResponse{
 		Success: true,
-		Status:  serviceStatusToProto(resStatus),
+		Status:  utils.ServiceStatusToProto(resStatus),
 	}, nil
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-func mapServiceResourceToProto(res *models.Resource) *resourcev1.Resource {
-	proto := &resourcev1.Resource{
-		ResourceId: res.ID,
-		Name:       res.Name,
-		Type:       serviceTypeToProto(res.Type),
-		Location:   res.Location,
-		Status:     serviceStatusToProto(res.Status),
-		CreatedAt:  timestamppb.New(res.CreatedAt),
-		UpdatedAt:  timestamppb.New(res.UpdatedAt),
-	}
-
-	switch details := res.Details.(type) {
-	case *models.MeetingRoomDetails:
-		proto.Details = &resourcev1.Resource_MeetingRoom{
-			MeetingRoom: &resourcev1.MeetingRoomDetails{
-				Capacity:      details.Capacity,
-				HasProjector:  details.HasProjector,
-				HasWhiteboard: details.HasWhiteboard,
-			},
-		}
-	case *models.WorkspaceDetails:
-		proto.Details = &resourcev1.Resource_Workspace{
-			Workspace: &resourcev1.WorkspaceDetails{
-				HasMonitor: details.HasMonitor,
-			},
-		}
-	case *models.DeviceDetails:
-		proto.Details = &resourcev1.Resource_Device{
-			Device: &resourcev1.DeviceDetails{
-				DeviceType:   details.DeviceType,
-				Model:        details.Model,
-				SerialNumber: details.SerialNumber,
-				Description:  details.Description,
-			},
-		}
-	}
-
-	return proto
-}
-
-func serviceStatusToProto(s models.ResourceStatus) resourcev1.ResourceStatus {
-	switch s {
-	case models.ResourceStatusAvailable:
-		return resourcev1.ResourceStatus_RESOURCE_STATUS_AVAILABLE
-	case models.ResourceStatusOccupied:
-		return resourcev1.ResourceStatus_RESOURCE_STATUS_OCCUPIED
-	case models.ResourceStatusMaintenance:
-		return resourcev1.ResourceStatus_RESOURCE_STATUS_MAINTENANCE
-	case models.ResourceStatusEmergency:
-		return resourcev1.ResourceStatus_RESOURCE_STATUS_EMERGENCY
-	default:
-		return resourcev1.ResourceStatus_RESOURCE_STATUS_UNSPECIFIED
-	}
-}
-
-func serviceTypeToProto(t models.ResourceType) resourcev1.ResourceType {
-	switch t {
-	case models.ResourceTypeMeetingRoom:
-		return resourcev1.ResourceType_RESOURCE_TYPE_MEETING_ROOM
-	case models.ResourceTypeWorkspace:
-		return resourcev1.ResourceType_RESOURCE_TYPE_WORKSPACE
-	case models.ResourceTypeDevice:
-		return resourcev1.ResourceType_RESOURCE_TYPE_DEVICE
-	default:
-		return resourcev1.ResourceType_RESOURCE_TYPE_UNSPECIFIED
-	}
 }
