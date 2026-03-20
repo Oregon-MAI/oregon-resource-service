@@ -7,16 +7,17 @@ import (
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/domain/models"
 	"github.com/acyushka/oregon-resource-service/internal/grpc/resource/utils"
+	serviceResource "github.com/acyushka/oregon-resource-service/internal/service/resource"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type ResourceServiceAdmin interface {
-	CreateResource(ctx context.Context, in CreateResourceRequest) (*models.Resource, error)
+	CreateResource(ctx context.Context, in serviceResource.CreateResourceRequest) (*models.Resource, error)
 	GetResource(ctx context.Context, resourceID string) (*models.Resource, error)
 	GetResourcesList(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error)
-	UpdateResource(ctx context.Context, resourceID string, in UpdateResourceRequest, fields []string) (*models.Resource, error)
+	UpdateResource(ctx context.Context, resourceID string, in serviceResource.UpdateResourceRequest, fields []string) (*models.Resource, error)
 	DeleteResource(ctx context.Context, resourceID string) error
 	ChangeResourceStatus(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error)
 }
@@ -35,11 +36,11 @@ func (s *ServerAPI) CreateResource(ctx context.Context, in *resourcev1.CreateRes
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	req := CreateResourceRequest{
+	req := serviceResource.CreateResourceRequest{
 		Name:     in.GetName(),
 		Type:     models.ResourceType(in.GetType()),
 		Location: in.GetLocation(),
-		Details:  in.GetDetails(),
+		Details:  utils.ProtoDetailsToService(in.GetDetails()),
 	}
 
 	resource, err := s.service.CreateResource(ctx, req)

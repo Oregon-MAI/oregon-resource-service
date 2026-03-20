@@ -4,23 +4,9 @@ import (
 	"fmt"
 
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
-	"github.com/acyushka/oregon-resource-service/internal/domain/models"
 	"github.com/acyushka/oregon-resource-service/internal/grpc/resource/utils"
+	serviceResource "github.com/acyushka/oregon-resource-service/internal/service/resource"
 )
-
-type CreateResourceRequest struct {
-	Name     string
-	Type     models.ResourceType
-	Location string
-	Details  any
-}
-
-type UpdateResourceRequest struct {
-	Name     *string
-	Type     *models.ResourceType
-	Location *string
-	Details  any
-}
 
 func validateCreateResourceRequest(req *resourcev1.CreateResourceRequest) error {
 	if req.GetName() == "" {
@@ -48,8 +34,8 @@ func validateCreateResourceRequest(req *resourcev1.CreateResourceRequest) error 
 	return nil
 }
 
-func buildUpdateResourceRequest(in *resourcev1.UpdateResourceRequest) UpdateResourceRequest {
-	var req UpdateResourceRequest
+func buildUpdateResourceRequest(in *resourcev1.UpdateResourceRequest) serviceResource.UpdateResourceRequest {
+	var req serviceResource.UpdateResourceRequest
 	for _, path := range in.GetFieldMask().GetPaths() {
 		switch path {
 		case "name":
