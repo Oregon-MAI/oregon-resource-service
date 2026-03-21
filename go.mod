@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	github.com/acyushka/oregon-infra v0.0.0-20260312051127-8d9c91ae29f2
 	github.com/ilyakaznacheev/cleanenv v1.5.0
+	github.com/lib/pq v1.10.9
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
 )
