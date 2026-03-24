@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oregon-resource-postgres
+    environment:
+      POSTGRES_DB: resource_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/0001_resources.sql:/docker-entrypoint-initdb.d/0001_resources.sql:ro
+  resource-service:
+    image: acyushka/oregon-resource-service:latest
+    container_name: oregon-resource-service
+    depends_on:
+      - postgres
+    ports:
+      - "60007:60007"
+      - "60008:60008"
+      - "60009:60009"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+
+
