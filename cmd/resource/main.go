@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
+	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/OnYyon/oregon-api-gateway/pkg/logger"
 	"github.com/acyushka/oregon-resource-service/internal/app"
 	"github.com/acyushka/oregon-resource-service/internal/config"
 )
@@ -13,23 +15,39 @@ import (
 func main() {
 	cfg := config.MustLoad()
 
-	application, err := app.New(context.Background(), cfg)
+	log := logger.New(&logger.Config{
+		Level:       slog.LevelInfo,
+		ServiceName: "oregon-resource-service",
+		Format:      "text",
+		Environment: cfg.Env,
+	})
+
+	application, err := app.New(context.Background(), cfg, log)
 	if err != nil {
-		panic(fmt.Errorf("init app: %w", err))
+		log.Error("failed to init app", slog.Any("error", err))
+		os.Exit(1)
 	}
+
+	log.Info("application initialized")
 
 	stopCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
 		<-stopCtx.Done()
+		log.Info("shutdown signal received")
+
 		if err := application.Stop(); err != nil {
-			panic(fmt.Errorf("stop app: %w", err))
+			log.Error("failed to stop app", slog.Any("error", err))
+			return
 		}
+
+		log.Info("application stopped")
 	}()
 
 	if err := application.Run(); err != nil {
-		panic(fmt.Errorf("run app: %w", err))
+		log.Error("application run failed", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/lib/pq"
 
@@ -13,38 +14,53 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db  *sql.DB
+	log *slog.Logger
 }
 
-func New(ctx context.Context, dsn string) (*Repository, error) {
+func New(ctx context.Context, dsn string, log *slog.Logger) (*Repository, error) {
+	if log == nil {
+		log = slog.Default()
+	}
+
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
+		log.Error("postgres open failed", slog.Any("error", err))
 		return nil, fmt.Errorf("postgres.New: %w", err)
 	}
 
 	if err = db.PingContext(ctx); err != nil {
+		log.Error("postgres ping failed", slog.Any("error", err))
 		if closeErr := db.Close(); closeErr != nil {
+			log.Error("postgres close after ping failed", slog.Any("error", closeErr))
 			return nil, fmt.Errorf("postgres.New: ping db: %w; close db: %v", err, closeErr)
 		}
 		return nil, fmt.Errorf("postgres.New: %w", err)
 	}
 
-	return &Repository{db: db}, nil
+	return &Repository{db: db, log: log}, nil
 }
 
 func (r *Repository) Close() error {
-	return r.db.Close()
+	err := r.db.Close()
+	if err != nil {
+		r.log.Error("postgres close failed", slog.Any("error", err))
+	}
+
+	return err
 }
 
 func (r *Repository) CreateResource(ctx context.Context, resource *models.Resource) (createdResource *models.Resource, err error) {
 	const op = "postgres.CreateResource"
 
 	if resource == nil {
+		r.log.Error("create resource failed: nil resource")
 		return nil, fmt.Errorf("%s: resource is nil", op)
 	}
 
 	transaction, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		r.log.Error("create resource begin transaction failed", slog.Any("error", err))
 		return nil, fmt.Errorf("%s: begin transaction: %w", op, err)
 	}
 	defer func() {
@@ -72,14 +88,17 @@ func (r *Repository) CreateResource(ctx context.Context, resource *models.Resour
 		&createdResource.UpdatedAt,
 	)
 	if err != nil {
+		r.log.Error("create resource insert failed", slog.Any("error", err))
 		return nil, fmt.Errorf("%s: insert resources: %w", op, mapSQLError(err))
 	}
 
 	if err = insertDetailsByType(ctx, transaction, createdResource.ID, createdResource.Type, resource.Details); err != nil {
+		r.log.Error("create resource details insert failed", slog.String("resource_id", createdResource.ID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: insert details: %w", op, err)
 	}
 
 	if err = transaction.Commit(); err != nil {
+		r.log.Error("create resource commit failed", slog.String("resource_id", createdResource.ID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: commit transaction: %w", op, err)
 	}
 
@@ -117,8 +136,10 @@ func (r *Repository) GetResource(ctx context.Context, resourceID string) (*model
 	scannedResource, err := scanResourceRow(r.db.QueryRowContext(ctx, query, resourceID))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			r.log.Warn("get resource not found", slog.String("resource_id", resourceID))
 			return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
 		}
+		r.log.Error("get resource query failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
 
@@ -239,6 +260,7 @@ func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in s
 
 	transaction, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		r.log.Error("update resource begin transaction failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: begin transaction: %w", op, err)
 	}
 	defer rollbackTxOnErr(transaction, &err)
@@ -247,6 +269,12 @@ func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in s
 
 	if hasName || hasLocation || hasDetails {
 		if err = updateResourceBaseFields(ctx, transaction, resourceID, hasName, name, hasLocation, location); err != nil {
+			if errors.Is(err, models.ErrNotFound) {
+				r.log.Warn("update resource not found", slog.String("resource_id", resourceID))
+			} else {
+				r.log.Error("update resource base fields failed", slog.String("resource_id", resourceID), slog.Any("error", err))
+			}
+
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 	}
@@ -254,17 +282,20 @@ func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in s
 	if hasDetails {
 		err = updateDetailsByType(ctx, transaction, resourceID, in.Details)
 		if err != nil {
+			r.log.Error("update resource details failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 			return nil, fmt.Errorf("%s: update details: %w", op, err)
 		}
 	}
 
 	err = transaction.Commit()
 	if err != nil {
+		r.log.Error("update resource commit failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: commit transaction: %w", op, err)
 	}
 
 	updatedResource, err = r.GetResource(ctx, resourceID)
 	if err != nil {
+		r.log.Error("update resource load updated failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: load updated resource: %w", op, err)
 	}
 
@@ -279,14 +310,17 @@ func (r *Repository) DeleteResource(ctx context.Context, resourceID string) erro
 		WHERE uuid = $1::uuid
 	`, resourceID)
 	if err != nil {
+		r.log.Error("delete resource failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
 
 	affectedRowsCount, err := result.RowsAffected()
 	if err != nil {
+		r.log.Error("delete resource rows affected failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return fmt.Errorf("%s: rows affected: %w", op, err)
 	}
 	if affectedRowsCount == 0 {
+		r.log.Warn("delete resource not found", slog.String("resource_id", resourceID))
 		return fmt.Errorf("%s: %w", op, models.ErrNotFound)
 	}
 
@@ -297,6 +331,7 @@ func (r *Repository) ChangeResourceStatus(ctx context.Context, resourceID string
 	const op = "postgres.ChangeResourceStatus"
 
 	if _, err := parseResourceStatus(string(status)); err != nil {
+		r.log.Warn("change status invalid status", slog.String("resource_id", resourceID), slog.String("status", string(status)))
 		return nil, fmt.Errorf("%s: %w", op, models.ErrInvalidStatus)
 	}
 
@@ -308,19 +343,23 @@ func (r *Repository) ChangeResourceStatus(ctx context.Context, resourceID string
 		WHERE uuid = $1::uuid
 	`, resourceID, status)
 	if err != nil {
+		r.log.Error("change status update failed", slog.String("resource_id", resourceID), slog.String("status", string(status)), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
 
 	affectedRowsCount, err := result.RowsAffected()
 	if err != nil {
+		r.log.Error("change status rows affected failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: rows affected: %w", op, err)
 	}
 	if affectedRowsCount == 0 {
+		r.log.Warn("change status resource not found", slog.String("resource_id", resourceID))
 		return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
 	}
 
 	resource, err := r.GetResource(ctx, resourceID)
 	if err != nil {
+		r.log.Error("change status load changed resource failed", slog.String("resource_id", resourceID), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: load changed resource: %w", op, err)
 	}
 
@@ -332,10 +371,12 @@ func (r *Repository) ChangeResourceStatus(ctx context.Context, resourceID string
 func (r *Repository) queryResources(ctx context.Context, op, query string, args ...any) (resources []*models.Resource, err error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
+		r.log.Error("query resources failed", slog.String("op", op), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			r.log.Error("query resources close rows failed", slog.String("op", op), slog.Any("error", closeErr))
 			err = fmt.Errorf("%s: close rows: %w", op, closeErr)
 		}
 	}()
@@ -344,11 +385,13 @@ func (r *Repository) queryResources(ctx context.Context, op, query string, args 
 	for rows.Next() {
 		scannedResource, scanErr := scanResourceRows(rows)
 		if scanErr != nil {
+			r.log.Error("query resources scan failed", slog.String("op", op), slog.Any("error", scanErr))
 			return nil, fmt.Errorf("%s: %w", op, mapSQLError(scanErr))
 		}
 
 		resource, buildErr := buildResourceFromRow(scannedResource)
 		if buildErr != nil {
+			r.log.Error("query resources build model failed", slog.String("op", op), slog.Any("error", buildErr))
 			return nil, fmt.Errorf("%s: %w", op, buildErr)
 		}
 
@@ -356,6 +399,7 @@ func (r *Repository) queryResources(ctx context.Context, op, query string, args 
 	}
 
 	if err = rows.Err(); err != nil {
+		r.log.Error("query resources iteration failed", slog.String("op", op), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
 
