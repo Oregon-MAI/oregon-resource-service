@@ -1,14 +1,51 @@
-# oregon-go-template
+# Oregon Resource Service
 
-# Ci
+Микросервис для управления ресурсами (переговорки, рабочие места, устройства).
 
-Работает все при пуши в main, откртом PR в main или высталегиня тега версии(v*)
+Сейчас поднимаются 2 gRPC API:
+- `ResourcePublicService` — CRUD + списки/доступность.
+- `ResourceBookingService` — методы для бронирования.
 
-## Linters
+## Быстрый старт (Docker Compose)
 
-Минимальные требования к код стайлу, в основном упор идет в производительность и анализ поддреживаемости.
-Использкеться golangci-lint(в данном случае его actoins).
-Он будет отсавлять коменты в PR во вкладке "File changed"
+Запуск Postgres + сервиса:
 
-## Docker push
-docker-push - просиходит после коммита в main. Просиходит сборка образа и отпрвка его в ghcr.io. **Обязательное условие этот public repo** инче не сможем все собрать в docker-compose. **Dockerfile ожидаем в /**
+```bash
+docker compose up -d
+```
+
+Остановка:
+
+```bash
+docker compose down
+```
+
+По умолчанию открыты порты:
+- `60009` — public gRPC
+- `60008` — booking gRPC
+- `5432` — Postgres
+
+## Локальный запуск
+
+```bash
+go run ./cmd/resource -config ./config/local.yml
+```
+
+## Список ручек
+
+### `ResourcePublicService`
+
+- `CreateResource`
+- `GetResource`
+- `GetResourcesList`
+- `UpdateResource`
+- `DeleteResource`
+- `ChangeResourceStatus`
+- `GetAvailableResources`
+
+### `ResourceBookingService`
+
+- `GetResource`
+- `CheckResourceStatus`
+- `GetAvailableResources`
+- `UpdateResourceOccupancy`

@@ -1,0 +1,15 @@
+env: "local"
+
+grpc:
+  booking:
+    port: 60008
+  public:
+    port: 60009
+
+database:
+  host: "postgres"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  name: "resource_service"
+  ssl_mode: "disable"
