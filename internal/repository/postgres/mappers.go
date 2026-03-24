@@ -49,6 +49,64 @@ func scanResourceRow(row *sql.Row) (resourceRow, error) {
 	return r, err
 }
 
+func scanResourceRows(rows *sql.Rows) (resourceRow, error) {
+	var r resourceRow
+	err := rows.Scan(
+		&r.id,
+		&r.name,
+		&r.typeRaw,
+		&r.location,
+		&r.statusRaw,
+		&r.createdAt,
+		&r.updatedAt,
+		&r.mrCapacity,
+		&r.mrHasProjector,
+		&r.mrHasWhiteboard,
+		&r.wsHasMonitor,
+		&r.deviceType,
+		&r.serialNumber,
+		&r.model,
+		&r.description,
+	)
+
+	return r, err
+}
+
+func buildResourceFromRow(scannedResource resourceRow) (*models.Resource, error) {
+	resourceType, err := parseResourceType(scannedResource.typeRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	resourceStatus, err := parseResourceStatus(scannedResource.statusRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	resource := &models.Resource{
+		ID:     scannedResource.id,
+		Name:   scannedResource.name,
+		Type:   resourceType,
+		Status: resourceStatus,
+	}
+	if scannedResource.location.Valid {
+		resource.Location = scannedResource.location.String
+	}
+	if scannedResource.createdAt.Valid {
+		resource.CreatedAt = scannedResource.createdAt.Time
+	}
+	if scannedResource.updatedAt.Valid {
+		resource.UpdatedAt = scannedResource.updatedAt.Time
+	}
+
+	resource.Details, err = parseResourceDetails(resourceType, scannedResource)
+	if err != nil {
+		return nil, err
+	}
+
+	return resource, nil
+}
+
 func parseResourceType(v string) (models.ResourceType, error) {
 	t := models.ResourceType(v)
 	switch t {
@@ -121,16 +179,15 @@ func mapSQLError(err error) error {
 	if errors.As(err, &pqErr) {
 		switch string(pqErr.Code) {
 		case "22P02":
-			return fmt.Errorf("invalid uuid")
+			return errors.New("invalid uuid")
 		case "23505":
-			return fmt.Errorf("unique constraint violation")
+			return errors.New("unique constraint violation")
 		case "23514":
-			return fmt.Errorf("check constraint violation")
+			return errors.New("check constraint violation")
 		case "23503":
-			return fmt.Errorf("foreign key violation")
+			return errors.New("foreign key violation")
 		}
 	}
 
 	return err
 }
-

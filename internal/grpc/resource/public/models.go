@@ -1,7 +1,7 @@
-package admin
+package public
 
 import (
-	"fmt"
+	"errors"
 
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/grpc/resource/utils"
@@ -10,24 +10,24 @@ import (
 
 func validateCreateResourceRequest(req *resourcev1.CreateResourceRequest) error {
 	if req.GetName() == "" {
-		return fmt.Errorf("resource name is required")
+		return errors.New("resource name is required")
 	}
 	if req.GetType() == resourcev1.ResourceType_RESOURCE_TYPE_UNSPECIFIED {
-		return fmt.Errorf("resource type is required")
+		return errors.New("resource type is required")
 	}
 
 	switch req.GetType() {
 	case resourcev1.ResourceType_RESOURCE_TYPE_MEETING_ROOM:
 		if _, ok := req.GetDetails().(*resourcev1.CreateResourceRequest_MeetingRoom); !ok {
-			return fmt.Errorf("meeting_room details required for type MEETING_ROOM")
+			return errors.New("meeting_room details required for type MEETING_ROOM")
 		}
 	case resourcev1.ResourceType_RESOURCE_TYPE_WORKSPACE:
 		if _, ok := req.GetDetails().(*resourcev1.CreateResourceRequest_Workspace); !ok {
-			return fmt.Errorf("workspace details required for type WORKSPACE")
+			return errors.New("workspace details required for type WORKSPACE")
 		}
 	case resourcev1.ResourceType_RESOURCE_TYPE_DEVICE:
 		if _, ok := req.GetDetails().(*resourcev1.CreateResourceRequest_Device); !ok {
-			return fmt.Errorf("device details required for type DEVICE")
+			return errors.New("device details required for type DEVICE")
 		}
 	}
 

@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"fmt"
+	"errors"
 
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/domain/models"
@@ -85,7 +85,7 @@ func ProtoTypeToService(t resourcev1.ResourceType) (models.ResourceType, error) 
 	case resourcev1.ResourceType_RESOURCE_TYPE_DEVICE:
 		return models.ResourceTypeDevice, nil
 	default:
-		return "", fmt.Errorf("invalid resource type")
+		return "", errors.New("invalid resource type")
 	}
 }
 

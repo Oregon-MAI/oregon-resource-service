@@ -23,7 +23,9 @@ func New(ctx context.Context, dsn string) (*Repository, error) {
 	}
 
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, fmt.Errorf("postgres.New: ping db: %w; close db: %v", err, closeErr)
+		}
 		return nil, fmt.Errorf("postgres.New: %w", err)
 	}
 
@@ -34,7 +36,7 @@ func (r *Repository) Close() error {
 	return r.db.Close()
 }
 
-func (r *Repository) CreateResource(ctx context.Context, resource *models.Resource) (*models.Resource, error) {
+func (r *Repository) CreateResource(ctx context.Context, resource *models.Resource) (createdResource *models.Resource, err error) {
 	const op = "postgres.CreateResource"
 
 	if resource == nil {
@@ -46,12 +48,16 @@ func (r *Repository) CreateResource(ctx context.Context, resource *models.Resour
 		return nil, fmt.Errorf("%s: begin transaction: %w", op, err)
 	}
 	defer func() {
-		if err != nil {
-			_ = transaction.Rollback()
+		if err == nil {
+			return
+		}
+
+		if rollbackErr := transaction.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			err = fmt.Errorf("%w; rollback transaction: %v", err, rollbackErr)
 		}
 	}()
 
-	createdResource := &models.Resource{}
+	createdResource = &models.Resource{}
 	err = transaction.QueryRowContext(ctx, `
 		INSERT INTO resources (name, type, location, status)
 		VALUES ($1, $2, $3, $4)
@@ -228,51 +234,20 @@ func (r *Repository) GetAvailableResources(ctx context.Context, types []models.R
 	`, typeFilter, models.ResourceStatusAvailable, location)
 }
 
-func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in service.UpdateResourceRequest) (*models.Resource, error) {
+func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in service.UpdateResourceRequest) (updatedResource *models.Resource, err error) {
 	const op = "postgres.UpdateResource"
 
 	transaction, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: begin transaction: %w", op, err)
 	}
-	defer func() {
-		if err != nil {
-			_ = transaction.Rollback()
-		}
-	}()
+	defer rollbackTxOnErr(transaction, &err)
 
-	hasName := in.Name != nil
-	hasLocation := in.Location != nil
-	hasDetails := in.Details != nil
+	hasName, hasLocation, hasDetails, name, location := prepareUpdateResourceFields(in)
 
 	if hasName || hasLocation || hasDetails {
-		var name any
-		var location any
-		if hasName {
-			name = *in.Name
-		}
-		if hasLocation {
-			location = *in.Location
-		}
-
-		result, err := transaction.ExecContext(ctx, `
-			UPDATE resources
-			SET
-				name = CASE WHEN $2 THEN $3 ELSE name END,
-				location = CASE WHEN $4 THEN $5 ELSE location END,
-				updated_at = now()
-			WHERE uuid = $1::uuid
-		`, resourceID, hasName, name, hasLocation, location)
-		if err != nil {
-			return nil, fmt.Errorf("%s: update resources: %w", op, mapSQLError(err))
-		}
-
-		affectedRowsCount, err := result.RowsAffected()
-		if err != nil {
-			return nil, fmt.Errorf("%s: rows affected: %w", op, err)
-		}
-		if affectedRowsCount == 0 {
-			return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
+		if err = updateResourceBaseFields(ctx, transaction, resourceID, hasName, name, hasLocation, location); err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 	}
 
@@ -288,7 +263,7 @@ func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in s
 		return nil, fmt.Errorf("%s: commit transaction: %w", op, err)
 	}
 
-	updatedResource, err := r.GetResource(ctx, resourceID)
+	updatedResource, err = r.GetResource(ctx, resourceID)
 	if err != nil {
 		return nil, fmt.Errorf("%s: load updated resource: %w", op, err)
 	}
@@ -354,66 +329,27 @@ func (r *Repository) ChangeResourceStatus(ctx context.Context, resourceID string
 
 /////////////////////////////////////////////////////////////////////
 
-func (r *Repository) queryResources(ctx context.Context, op, query string, args ...any) ([]*models.Resource, error) {
+func (r *Repository) queryResources(ctx context.Context, op, query string, args ...any) (resources []*models.Resource, err error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("%s: close rows: %w", op, closeErr)
+		}
+	}()
 
-	resources := make([]*models.Resource, 0)
+	resources = make([]*models.Resource, 0)
 	for rows.Next() {
-		var scannedResource resourceRow
-		err = rows.Scan(
-			&scannedResource.id,
-			&scannedResource.name,
-			&scannedResource.typeRaw,
-			&scannedResource.location,
-			&scannedResource.statusRaw,
-			&scannedResource.createdAt,
-			&scannedResource.updatedAt,
-			&scannedResource.mrCapacity,
-			&scannedResource.mrHasProjector,
-			&scannedResource.mrHasWhiteboard,
-			&scannedResource.wsHasMonitor,
-			&scannedResource.deviceType,
-			&scannedResource.serialNumber,
-			&scannedResource.model,
-			&scannedResource.description,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
+		scannedResource, scanErr := scanResourceRows(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("%s: %w", op, mapSQLError(scanErr))
 		}
 
-		resourceType, err := parseResourceType(scannedResource.typeRaw)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-
-		resourceStatus, err := parseResourceStatus(scannedResource.statusRaw)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-
-		resource := &models.Resource{
-			ID:     scannedResource.id,
-			Name:   scannedResource.name,
-			Type:   resourceType,
-			Status: resourceStatus,
-		}
-		if scannedResource.location.Valid {
-			resource.Location = scannedResource.location.String
-		}
-		if scannedResource.createdAt.Valid {
-			resource.CreatedAt = scannedResource.createdAt.Time
-		}
-		if scannedResource.updatedAt.Valid {
-			resource.UpdatedAt = scannedResource.updatedAt.Time
-		}
-
-		resource.Details, err = parseResourceDetails(resourceType, scannedResource)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+		resource, buildErr := buildResourceFromRow(scannedResource)
+		if buildErr != nil {
+			return nil, fmt.Errorf("%s: %w", op, buildErr)
 		}
 
 		resources = append(resources, resource)
@@ -426,50 +362,125 @@ func (r *Repository) queryResources(ctx context.Context, op, query string, args 
 	return resources, nil
 }
 
+func rollbackTxOnErr(transaction *sql.Tx, operationErr *error) {
+	if operationErr == nil || *operationErr == nil {
+		return
+	}
+
+	if rollbackErr := transaction.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+		*operationErr = fmt.Errorf("%w; rollback transaction: %v", *operationErr, rollbackErr)
+	}
+}
+
+func prepareUpdateResourceFields(in service.UpdateResourceRequest) (hasName bool, hasLocation bool, hasDetails bool, name any, location any) {
+	hasName = in.Name != nil
+	hasLocation = in.Location != nil
+	hasDetails = in.Details != nil
+
+	if hasName {
+		name = *in.Name
+	}
+	if hasLocation {
+		location = *in.Location
+	}
+
+	return hasName, hasLocation, hasDetails, name, location
+}
+
+func updateResourceBaseFields(
+	ctx context.Context,
+	transaction *sql.Tx,
+	resourceID string,
+	hasName bool,
+	name any,
+	hasLocation bool,
+	location any,
+) error {
+	result, err := transaction.ExecContext(ctx, `
+		UPDATE resources
+		SET
+			name = CASE WHEN $2 THEN $3 ELSE name END,
+			location = CASE WHEN $4 THEN $5 ELSE location END,
+			updated_at = now()
+		WHERE uuid = $1::uuid
+	`, resourceID, hasName, name, hasLocation, location)
+	if err != nil {
+		return fmt.Errorf("update resources: %w", mapSQLError(err))
+	}
+
+	affectedRowsCount, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if affectedRowsCount == 0 {
+		return models.ErrNotFound
+	}
+
+	return nil
+}
+
 func insertDetailsByType(ctx context.Context, tx *sql.Tx, resourceID string, resourceType models.ResourceType, details any) error {
 	switch resourceType {
 	case models.ResourceTypeMeetingRoom:
-		d, ok := details.(*models.MeetingRoomDetails)
-		if !ok || d == nil {
-			return fmt.Errorf("%w: meeting_room details required", models.ErrInvalidType)
-		}
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO meeting_rooms (resource_uuid, capacity, has_projector, has_whiteboard)
-			VALUES ($1::uuid, $2, $3, $4)
-		`, resourceID, d.Capacity, d.HasProjector, d.HasWhiteboard)
-		if err != nil {
-			return mapSQLError(err)
-		}
-		return nil
+		return insertMeetingRoomDetails(ctx, tx, resourceID, details)
 	case models.ResourceTypeWorkspace:
-		d, ok := details.(*models.WorkspaceDetails)
-		if !ok || d == nil {
-			return fmt.Errorf("%w: workspace details required", models.ErrInvalidType)
-		}
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO workspaces (resource_uuid, has_monitor)
-			VALUES ($1::uuid, $2)
-		`, resourceID, d.HasMonitor)
-		if err != nil {
-			return mapSQLError(err)
-		}
-		return nil
+		return insertWorkspaceDetails(ctx, tx, resourceID, details)
 	case models.ResourceTypeDevice:
-		d, ok := details.(*models.DeviceDetails)
-		if !ok || d == nil {
-			return fmt.Errorf("%w: device details required", models.ErrInvalidType)
-		}
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO devices (resource_uuid, device_type, serial_number, model, description)
-			VALUES ($1::uuid, $2, $3, $4, $5)
-		`, resourceID, d.DeviceType, nullableString(d.SerialNumber), nullableString(d.Model), nullableString(d.Description))
-		if err != nil {
-			return mapSQLError(err)
-		}
-		return nil
+		return insertDeviceDetails(ctx, tx, resourceID, details)
 	default:
 		return models.ErrInvalidType
 	}
+}
+
+func insertMeetingRoomDetails(ctx context.Context, tx *sql.Tx, resourceID string, details any) error {
+	d, ok := details.(*models.MeetingRoomDetails)
+	if !ok || d == nil {
+		return fmt.Errorf("%w: meeting_room details required", models.ErrInvalidType)
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO meeting_rooms (resource_uuid, capacity, has_projector, has_whiteboard)
+		VALUES ($1::uuid, $2, $3, $4)
+	`, resourceID, d.Capacity, d.HasProjector, d.HasWhiteboard)
+	if err != nil {
+		return mapSQLError(err)
+	}
+
+	return nil
+}
+
+func insertWorkspaceDetails(ctx context.Context, tx *sql.Tx, resourceID string, details any) error {
+	d, ok := details.(*models.WorkspaceDetails)
+	if !ok || d == nil {
+		return fmt.Errorf("%w: workspace details required", models.ErrInvalidType)
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO workspaces (resource_uuid, has_monitor)
+		VALUES ($1::uuid, $2)
+	`, resourceID, d.HasMonitor)
+	if err != nil {
+		return mapSQLError(err)
+	}
+
+	return nil
+}
+
+func insertDeviceDetails(ctx context.Context, tx *sql.Tx, resourceID string, details any) error {
+	d, ok := details.(*models.DeviceDetails)
+	if !ok || d == nil {
+		return fmt.Errorf("%w: device details required", models.ErrInvalidType)
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO devices (resource_uuid, device_type, serial_number, model, description)
+		VALUES ($1::uuid, $2, $3, $4, $5)
+	`, resourceID, d.DeviceType, nullableString(d.SerialNumber), nullableString(d.Model), nullableString(d.Description))
+	if err != nil {
+		return mapSQLError(err)
+	}
+
+	return nil
 }
 
 func updateDetailsByType(ctx context.Context, tx *sql.Tx, resourceID string, details any) error {

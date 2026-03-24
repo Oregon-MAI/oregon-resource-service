@@ -3,7 +3,7 @@ module github.com/acyushka/oregon-resource-service
 go 1.25.7
 
 require (
-	github.com/acyushka/oregon-infra v0.0.0-20260312051127-8d9c91ae29f2
+	github.com/acyushka/oregon-infra v0.0.0-20260324185307-a5ad3e5b9da3
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/lib/pq v1.10.9
 	golang.org/x/sync v0.19.0

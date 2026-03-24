@@ -17,7 +17,6 @@ services:
     depends_on:
       - postgres
     ports:
-      - "60007:60007"
       - "60008:60008"
       - "60009:60009"
     restart: unless-stopped

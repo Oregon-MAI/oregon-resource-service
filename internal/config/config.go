@@ -15,7 +15,6 @@ type Config struct {
 }
 
 type GRPC struct {
-	Admin   ServiceConfig `yaml:"admin"`
 	Booking ServiceConfig `yaml:"booking"`
 	Public  ServiceConfig `yaml:"public"`
 }

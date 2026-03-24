@@ -23,7 +23,9 @@ func main() {
 
 	go func() {
 		<-stopCtx.Done()
-		_ = application.Stop()
+		if err := application.Stop(); err != nil {
+			panic(fmt.Errorf("stop app: %w", err))
+		}
 	}()
 
 	if err := application.Run(); err != nil {
@@ -31,4 +33,3 @@ func main() {
 	}
 
 }
-

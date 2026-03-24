@@ -1,8 +1,8 @@
 github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
-github.com/acyushka/oregon-infra v0.0.0-20260312051127-8d9c91ae29f2 h1:2ZWOgvK5Q6O905ZzoZG4+nVVjC6ZgNTBUgtV1igQEco=
-github.com/acyushka/oregon-infra v0.0.0-20260312051127-8d9c91ae29f2/go.mod h1:WSaVFulZL2CsKMCxTdakKLAlRFRi2mU5hWuwfJY6yX8=
+github.com/acyushka/oregon-infra v0.0.0-20260324185307-a5ad3e5b9da3 h1:9hHMc77CueehtSaz0mh/3VgYOP+sqVnGNl+egdVKgts=
+github.com/acyushka/oregon-infra v0.0.0-20260324185307-a5ad3e5b9da3/go.mod h1:WSaVFulZL2CsKMCxTdakKLAlRFRi2mU5hWuwfJY6yX8=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=

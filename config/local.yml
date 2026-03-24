@@ -1,8 +1,6 @@
 env: "local"
 
 grpc:
-  admin:
-    port: 60007
   booking:
     port: 60008
   public:

@@ -7,7 +7,6 @@ import (
 	"net"
 	"sync"
 
-	adminhandler "github.com/acyushka/oregon-resource-service/internal/grpc/resource/admin"
 	bookinghandler "github.com/acyushka/oregon-resource-service/internal/grpc/resource/booking"
 	publichandler "github.com/acyushka/oregon-resource-service/internal/grpc/resource/public"
 	"golang.org/x/sync/errgroup"
@@ -18,7 +17,6 @@ import (
 )
 
 type App struct {
-	admin   *serverUnit
 	booking *serverUnit
 	public  *serverUnit
 }
@@ -32,31 +30,21 @@ type serverUnit struct {
 }
 
 func New(
-	adminPort int,
 	bookingPort int,
 	publicPort int,
-	adminService adminhandler.ResourceServiceAdmin,
 	bookingService bookinghandler.ResourceServiceBooking,
 	publicService publichandler.ResourceServicePublic,
 ) *App {
-	adminServer := grpc.NewServer(grpc.UnaryInterceptor(recoveryUnaryInterceptor()))
-	bookingServer := grpc.NewServer()
-	publicServer := grpc.NewServer()
+	bookingServer := grpc.NewServer(grpc.UnaryInterceptor(recoveryUnaryInterceptor()))
+	publicServer := grpc.NewServer(grpc.UnaryInterceptor(recoveryUnaryInterceptor()))
 
-	reflection.Register(adminServer)
 	reflection.Register(bookingServer)
 	reflection.Register(publicServer)
 
-	adminhandler.NewServer(adminServer, adminService)
 	bookinghandler.NewServer(bookingServer, bookingService)
 	publichandler.NewServer(publicServer, publicService)
 
 	return &App{
-		admin: &serverUnit{
-			name:   "admin",
-			port:   adminPort,
-			server: adminServer,
-		},
 		booking: &serverUnit{
 			name:   "booking",
 			port:   bookingPort,
@@ -79,7 +67,7 @@ func (a *App) MustRun() {
 func (a *App) Run() error {
 	const op = "grpcapp.Run"
 
-	units := []*serverUnit{a.admin, a.booking, a.public}
+	units := []*serverUnit{a.booking, a.public}
 	for _, unit := range units {
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", unit.port))
 		if err != nil {
@@ -114,7 +102,7 @@ func (a *App) Run() error {
 
 func (a *App) Stop() {
 	var wg sync.WaitGroup
-	for _, unit := range []*serverUnit{a.admin, a.booking, a.public} {
+	for _, unit := range []*serverUnit{a.booking, a.public} {
 		wg.Add(1)
 		go func(s *serverUnit) {
 			defer wg.Done()
@@ -140,5 +128,3 @@ func recoveryUnaryInterceptor() grpc.UnaryServerInterceptor {
 		return handler(ctx, req)
 	}
 }
-
-

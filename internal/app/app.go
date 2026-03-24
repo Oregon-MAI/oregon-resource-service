@@ -25,10 +25,8 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	resourceService := service.NewService(repo)
 
 	grpcServer := grpcapp.New(
-		cfg.GRPC.Admin.Port,
 		cfg.GRPC.Booking.Port,
 		cfg.GRPC.Public.Port,
-		resourceService,
 		resourceService,
 		resourceService,
 	)
@@ -67,5 +65,3 @@ func makeDSN(cfg config.Database) string {
 		cfg.SSLMode,
 	)
 }
-
-

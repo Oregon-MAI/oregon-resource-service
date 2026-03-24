@@ -80,7 +80,8 @@ func (s *ServerAPI) GetAvailableResources(ctx context.Context, in *resourcev1.Ge
 	}
 
 	return &resourcev1.GetAvailableResourcesResponse{
-		Resources:  protoResources,
+		Resources: protoResources,
+		//nolint:gosec
 		TotalCount: int32(len(protoResources)),
 	}, nil
 }
