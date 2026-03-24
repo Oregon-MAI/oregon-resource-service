@@ -17,7 +17,7 @@ type ResourceServiceAdmin interface {
 	CreateResource(ctx context.Context, in serviceResource.CreateResourceRequest) (*models.Resource, error)
 	GetResource(ctx context.Context, resourceID string) (*models.Resource, error)
 	GetResourcesList(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error)
-	UpdateResource(ctx context.Context, resourceID string, in serviceResource.UpdateResourceRequest, fields []string) (*models.Resource, error)
+	UpdateResource(ctx context.Context, resourceID string, in serviceResource.UpdateResourceRequest) (*models.Resource, error)
 	DeleteResource(ctx context.Context, resourceID string) error
 	ChangeResourceStatus(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error)
 }
@@ -96,10 +96,13 @@ func (s *ServerAPI) UpdateResource(ctx context.Context, in *resourcev1.UpdateRes
 
 	updateReq := buildUpdateResourceRequest(in)
 
-	resource, err := s.service.UpdateResource(ctx, in.GetResourceId(), updateReq, in.GetFieldMask().GetPaths())
+	resource, err := s.service.UpdateResource(ctx, in.GetResourceId(), updateReq)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.Is(err, models.ErrInvalidType) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Error(codes.Internal, "failed to update resource")
 	}

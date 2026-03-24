@@ -13,7 +13,7 @@ type Repository interface {
 	GetResource(ctx context.Context, resourceID string) (*models.Resource, error)
 	GetResourcesList(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error)
 	GetAvailableResources(ctx context.Context, types []models.ResourceType, location string) ([]*models.Resource, error)
-	UpdateResource(ctx context.Context, resourceID string, in UpdateResourceRequest, fields []string) (*models.Resource, error)
+	UpdateResource(ctx context.Context, resourceID string, in UpdateResourceRequest) (*models.Resource, error)
 	DeleteResource(ctx context.Context, resourceID string) error
 	ChangeResourceStatus(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error)
 }
@@ -78,27 +78,8 @@ func (s *Service) GetAvailableResources(ctx context.Context, types []models.Reso
 	return resources, nil
 }
 
-func (s *Service) UpdateResource(ctx context.Context, resourceID string, in UpdateResourceRequest, fields []string) (*models.Resource, error) {
+func (s *Service) UpdateResource(ctx context.Context, resourceID string, in UpdateResourceRequest) (*models.Resource, error) {
 	const op = "Service.UpdateResource"
-
-	for _, field := range fields {
-		switch field {
-		case "name", "location", "details":
-		default:
-			return nil, fmt.Errorf("%s: unknown field %q", op, field)
-		}
-	}
-
-	if containsField(fields, "details") {
-		resource, err := s.repo.GetResource(ctx, resourceID)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-
-		if err := validateDetailsByType(resource.Type, in.Details); err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-	}
 
 	repoReq := UpdateResourceRequest{
 		Name:     in.Name,
@@ -106,10 +87,13 @@ func (s *Service) UpdateResource(ctx context.Context, resourceID string, in Upda
 		Details:  in.Details,
 	}
 
-	updatedResource, err := s.repo.UpdateResource(ctx, resourceID, repoReq, fields)
+	updatedResource, err := s.repo.UpdateResource(ctx, resourceID, repoReq)
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
+		}
+		if errors.Is(err, models.ErrInvalidType) {
+			return nil, fmt.Errorf("%s: %w", op, models.ErrInvalidType)
 		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -196,37 +180,4 @@ func (s *Service) UpdateResourceOccupancy(ctx context.Context, resourceID string
 	}
 
 	return updatedResource.Status, nil
-}
-
-//////////////////////////////////////////////////////////////////////
-
-func containsField(fields []string, target string) bool {
-	for _, field := range fields {
-		if field == target {
-			return true
-		}
-	}
-
-	return false
-}
-
-func validateDetailsByType(resourceType models.ResourceType, details any) error {
-	switch resourceType {
-	case models.ResourceTypeMeetingRoom:
-		if _, ok := details.(*models.MeetingRoomDetails); !ok {
-			return fmt.Errorf("meeting_room details required for type MEETING_ROOM")
-		}
-	case models.ResourceTypeWorkspace:
-		if _, ok := details.(*models.WorkspaceDetails); !ok {
-			return fmt.Errorf("workspace details required for type WORKSPACE")
-		}
-	case models.ResourceTypeDevice:
-		if _, ok := details.(*models.DeviceDetails); !ok {
-			return fmt.Errorf("device details required for type DEVICE")
-		}
-	default:
-		return fmt.Errorf("resource type is required")
-	}
-
-	return nil
 }

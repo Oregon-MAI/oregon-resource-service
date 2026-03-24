@@ -6,30 +6,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/acyushka/oregon-resource-service/internal/domain/models"
 	service "github.com/acyushka/oregon-resource-service/internal/service/resource"
-	"github.com/lib/pq"
 )
 
 type Repository struct {
 	db *sql.DB
-}
-
-type resourceRow struct {
-	id, name, typeRaw, statusRaw string
-	location                     sql.NullString
-	createdAt, updatedAt         sql.NullTime
-
-	mrCapacity      sql.NullInt16
-	mrHasProjector  sql.NullBool
-	mrHasWhiteboard sql.NullBool
-
-	wsHasMonitor sql.NullBool
-
-	deviceType   sql.NullString
-	serialNumber sql.NullString
-	model        sql.NullString
-	description  sql.NullString
 }
 
 func New(ctx context.Context, dsn string) (*Repository, error) {
@@ -167,26 +151,280 @@ func (r *Repository) GetResource(ctx context.Context, resourceID string) (*model
 }
 
 func (r *Repository) GetResourcesList(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error) {
-	return nil, fmt.Errorf("postgres.GetResourcesList: not implemented")
+	const op = "postgres.GetResourcesList"
+
+	var typeFilter any
+	if len(types) > 0 {
+		typeValues := make([]string, 0, len(types))
+		for _, t := range types {
+			typeValues = append(typeValues, string(t))
+		}
+		typeFilter = pq.Array(typeValues)
+	}
+
+	return r.queryResources(ctx, op, `
+		SELECT
+			r.uuid::text,
+			r.name,
+			r.type::text,
+			r.location,
+			r.status::text,
+			r.created_at,
+			r.updated_at,
+			mr.capacity,
+			mr.has_projector,
+			mr.has_whiteboard,
+			ws.has_monitor,
+			d.device_type,
+			d.serial_number,
+			d.model,
+			d.description
+		FROM resources r
+		LEFT JOIN meeting_rooms mr ON mr.resource_uuid = r.uuid
+		LEFT JOIN workspaces ws ON ws.resource_uuid = r.uuid
+		LEFT JOIN devices d ON d.resource_uuid = r.uuid
+		WHERE ($1::text[] IS NULL OR r.type::text = ANY($1::text[]))
+		ORDER BY r.created_at DESC
+	`, typeFilter)
 }
 
 func (r *Repository) GetAvailableResources(ctx context.Context, types []models.ResourceType, location string) ([]*models.Resource, error) {
-	return nil, fmt.Errorf("postgres.GetAvailableResources: not implemented")
+	const op = "postgres.GetAvailableResources"
+
+	var typeFilter any
+	if len(types) > 0 {
+		typeValues := make([]string, 0, len(types))
+		for _, t := range types {
+			typeValues = append(typeValues, string(t))
+		}
+		typeFilter = pq.Array(typeValues)
+	}
+
+	return r.queryResources(ctx, op, `
+		SELECT
+			r.uuid::text,
+			r.name,
+			r.type::text,
+			r.location,
+			r.status::text,
+			r.created_at,
+			r.updated_at,
+			mr.capacity,
+			mr.has_projector,
+			mr.has_whiteboard,
+			ws.has_monitor,
+			d.device_type,
+			d.serial_number,
+			d.model,
+			d.description
+		FROM resources r
+		LEFT JOIN meeting_rooms mr ON mr.resource_uuid = r.uuid
+		LEFT JOIN workspaces ws ON ws.resource_uuid = r.uuid
+		LEFT JOIN devices d ON d.resource_uuid = r.uuid
+		WHERE r.status = $2::resource_status
+			AND ($1::text[] IS NULL OR r.type::text = ANY($1::text[]))
+			AND ($3::text = '' OR r.location = $3)
+		ORDER BY r.created_at DESC
+	`, typeFilter, models.ResourceStatusAvailable, location)
 }
 
-func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in service.UpdateResourceRequest, fields []string) (*models.Resource, error) {
-	return nil, fmt.Errorf("postgres.UpdateResource: not implemented")
+func (r *Repository) UpdateResource(ctx context.Context, resourceID string, in service.UpdateResourceRequest) (*models.Resource, error) {
+	const op = "postgres.UpdateResource"
+
+	transaction, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: begin transaction: %w", op, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = transaction.Rollback()
+		}
+	}()
+
+	hasName := in.Name != nil
+	hasLocation := in.Location != nil
+	hasDetails := in.Details != nil
+
+	if hasName || hasLocation || hasDetails {
+		var name any
+		var location any
+		if hasName {
+			name = *in.Name
+		}
+		if hasLocation {
+			location = *in.Location
+		}
+
+		result, err := transaction.ExecContext(ctx, `
+			UPDATE resources
+			SET
+				name = CASE WHEN $2 THEN $3 ELSE name END,
+				location = CASE WHEN $4 THEN $5 ELSE location END,
+				updated_at = now()
+			WHERE uuid = $1::uuid
+		`, resourceID, hasName, name, hasLocation, location)
+		if err != nil {
+			return nil, fmt.Errorf("%s: update resources: %w", op, mapSQLError(err))
+		}
+
+		affectedRowsCount, err := result.RowsAffected()
+		if err != nil {
+			return nil, fmt.Errorf("%s: rows affected: %w", op, err)
+		}
+		if affectedRowsCount == 0 {
+			return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
+		}
+	}
+
+	if hasDetails {
+		err = updateDetailsByType(ctx, transaction, resourceID, in.Details)
+		if err != nil {
+			return nil, fmt.Errorf("%s: update details: %w", op, err)
+		}
+	}
+
+	err = transaction.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("%s: commit transaction: %w", op, err)
+	}
+
+	updatedResource, err := r.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: load updated resource: %w", op, err)
+	}
+
+	return updatedResource, nil
 }
 
 func (r *Repository) DeleteResource(ctx context.Context, resourceID string) error {
-	return fmt.Errorf("postgres.DeleteResource: not implemented")
+	const op = "postgres.DeleteResource"
+
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM resources
+		WHERE uuid = $1::uuid
+	`, resourceID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, mapSQLError(err))
+	}
+
+	affectedRowsCount, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: rows affected: %w", op, err)
+	}
+	if affectedRowsCount == 0 {
+		return fmt.Errorf("%s: %w", op, models.ErrNotFound)
+	}
+
+	return nil
 }
 
 func (r *Repository) ChangeResourceStatus(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error) {
-	return nil, fmt.Errorf("postgres.ChangeResourceStatus: not implemented")
+	const op = "postgres.ChangeResourceStatus"
+
+	if _, err := parseResourceStatus(string(status)); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, models.ErrInvalidStatus)
+	}
+
+	_ = reason
+
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE resources
+		SET status = $2, updated_at = now()
+		WHERE uuid = $1::uuid
+	`, resourceID, status)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
+	}
+
+	affectedRowsCount, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("%s: rows affected: %w", op, err)
+	}
+	if affectedRowsCount == 0 {
+		return nil, fmt.Errorf("%s: %w", op, models.ErrNotFound)
+	}
+
+	resource, err := r.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: load changed resource: %w", op, err)
+	}
+
+	return resource, nil
 }
 
 /////////////////////////////////////////////////////////////////////
+
+func (r *Repository) queryResources(ctx context.Context, op, query string, args ...any) ([]*models.Resource, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
+	}
+	defer rows.Close()
+
+	resources := make([]*models.Resource, 0)
+	for rows.Next() {
+		var scannedResource resourceRow
+		err = rows.Scan(
+			&scannedResource.id,
+			&scannedResource.name,
+			&scannedResource.typeRaw,
+			&scannedResource.location,
+			&scannedResource.statusRaw,
+			&scannedResource.createdAt,
+			&scannedResource.updatedAt,
+			&scannedResource.mrCapacity,
+			&scannedResource.mrHasProjector,
+			&scannedResource.mrHasWhiteboard,
+			&scannedResource.wsHasMonitor,
+			&scannedResource.deviceType,
+			&scannedResource.serialNumber,
+			&scannedResource.model,
+			&scannedResource.description,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
+		}
+
+		resourceType, err := parseResourceType(scannedResource.typeRaw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+
+		resourceStatus, err := parseResourceStatus(scannedResource.statusRaw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+
+		resource := &models.Resource{
+			ID:     scannedResource.id,
+			Name:   scannedResource.name,
+			Type:   resourceType,
+			Status: resourceStatus,
+		}
+		if scannedResource.location.Valid {
+			resource.Location = scannedResource.location.String
+		}
+		if scannedResource.createdAt.Valid {
+			resource.CreatedAt = scannedResource.createdAt.Time
+		}
+		if scannedResource.updatedAt.Valid {
+			resource.UpdatedAt = scannedResource.updatedAt.Time
+		}
+
+		resource.Details, err = parseResourceDetails(resourceType, scannedResource)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+
+		resources = append(resources, resource)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, mapSQLError(err))
+	}
+
+	return resources, nil
+}
 
 func insertDetailsByType(ctx context.Context, tx *sql.Tx, resourceID string, resourceType models.ResourceType, details any) error {
 	switch resourceType {
@@ -234,110 +472,55 @@ func insertDetailsByType(ctx context.Context, tx *sql.Tx, resourceID string, res
 	}
 }
 
-func scanResourceRow(row *sql.Row) (resourceRow, error) {
-	var r resourceRow
-	err := row.Scan(
-		&r.id,
-		&r.name,
-		&r.typeRaw,
-		&r.location,
-		&r.statusRaw,
-		&r.createdAt,
-		&r.updatedAt,
-		&r.mrCapacity,
-		&r.mrHasProjector,
-		&r.mrHasWhiteboard,
-		&r.wsHasMonitor,
-		&r.deviceType,
-		&r.serialNumber,
-		&r.model,
-		&r.description,
+func updateDetailsByType(ctx context.Context, tx *sql.Tx, resourceID string, details any) error {
+	var (
+		result sql.Result
+		err    error
 	)
 
-	return r, err
-}
-
-func parseResourceType(v string) (models.ResourceType, error) {
-	t := models.ResourceType(v)
-	switch t {
-	case models.ResourceTypeMeetingRoom, models.ResourceTypeWorkspace, models.ResourceTypeDevice:
-		return t, nil
+	switch d := details.(type) {
+	case *models.MeetingRoomDetails:
+		if d == nil {
+			return fmt.Errorf("%w: meeting_room details required", models.ErrInvalidType)
+		}
+		result, err = tx.ExecContext(ctx, `
+			UPDATE meeting_rooms
+			SET capacity = $1, has_projector = $2, has_whiteboard = $3
+			WHERE resource_uuid = $4::uuid
+		`, d.Capacity, d.HasProjector, d.HasWhiteboard, resourceID)
+	case *models.WorkspaceDetails:
+		if d == nil {
+			return fmt.Errorf("%w: workspace details required", models.ErrInvalidType)
+		}
+		result, err = tx.ExecContext(ctx, `
+			UPDATE workspaces
+			SET has_monitor = $1
+			WHERE resource_uuid = $2::uuid
+		`, d.HasMonitor, resourceID)
+	case *models.DeviceDetails:
+		if d == nil {
+			return fmt.Errorf("%w: device details required", models.ErrInvalidType)
+		}
+		result, err = tx.ExecContext(ctx, `
+			UPDATE devices
+			SET device_type = $1, serial_number = $2, model = $3, description = $4
+			WHERE resource_uuid = $5::uuid
+		`, d.DeviceType, nullableString(d.SerialNumber), nullableString(d.Model), nullableString(d.Description), resourceID)
 	default:
-		return "", models.ErrInvalidType
-	}
-}
-
-func parseResourceStatus(v string) (models.ResourceStatus, error) {
-	s := models.ResourceStatus(v)
-	switch s {
-	case models.ResourceStatusAvailable, models.ResourceStatusOccupied, models.ResourceStatusMaintenance, models.ResourceStatusEmergency:
-		return s, nil
-	default:
-		return "", models.ErrInvalidStatus
-	}
-}
-
-func parseResourceDetails(resourceType models.ResourceType, row resourceRow) (any, error) {
-	switch resourceType {
-	case models.ResourceTypeMeetingRoom:
-		if !row.mrCapacity.Valid {
-			return nil, fmt.Errorf("%w: meeting_room details row not found", models.ErrInvalidType)
-		}
-		return &models.MeetingRoomDetails{
-			Capacity:      int32(row.mrCapacity.Int16),
-			HasProjector:  row.mrHasProjector.Valid && row.mrHasProjector.Bool,
-			HasWhiteboard: row.mrHasWhiteboard.Valid && row.mrHasWhiteboard.Bool,
-		}, nil
-	case models.ResourceTypeWorkspace:
-		if !row.wsHasMonitor.Valid {
-			return nil, fmt.Errorf("%w: workspace details row not found", models.ErrInvalidType)
-		}
-		return &models.WorkspaceDetails{HasMonitor: row.wsHasMonitor.Bool}, nil
-	case models.ResourceTypeDevice:
-		if !row.deviceType.Valid {
-			return nil, fmt.Errorf("%w: device details row not found", models.ErrInvalidType)
-		}
-		d := &models.DeviceDetails{DeviceType: row.deviceType.String}
-		if row.serialNumber.Valid {
-			d.SerialNumber = row.serialNumber.String
-		}
-		if row.model.Valid {
-			d.Model = row.model.String
-		}
-		if row.description.Valid {
-			d.Description = row.description.String
-		}
-		return d, nil
-	default:
-		return nil, models.ErrInvalidType
-	}
-}
-
-func nullableString(v string) any {
-	if v == "" {
-		return nil
-	}
-	return v
-}
-
-func mapSQLError(err error) error {
-	if err == nil {
-		return nil
+		return models.ErrInvalidType
 	}
 
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		switch string(pqErr.Code) {
-		case "22P02":
-			return fmt.Errorf("invalid uuid")
-		case "23505":
-			return fmt.Errorf("unique constraint violation")
-		case "23514":
-			return fmt.Errorf("check constraint violation")
-		case "23503":
-			return fmt.Errorf("foreign key violation")
-		}
+	if err != nil {
+		return mapSQLError(err)
 	}
 
-	return err
+	affectedRowsCount, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affectedRowsCount == 0 {
+		return models.ErrInvalidType
+	}
+
+	return nil
 }

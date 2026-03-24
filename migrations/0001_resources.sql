@@ -1,4 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TYPE resource_type AS ENUM ('meeting_room', 'workspace', 'device');
 CREATE TYPE resource_status AS ENUM ('available', 'occupied', 'maintenance', 'emergency');
 
