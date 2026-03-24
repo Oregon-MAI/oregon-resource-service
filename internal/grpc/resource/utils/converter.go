@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"fmt"
+
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/domain/models"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -74,6 +76,32 @@ func ServiceTypeToProto(t models.ResourceType) resourcev1.ResourceType {
 	}
 }
 
+func ProtoTypeToService(t resourcev1.ResourceType) (models.ResourceType, error) {
+	switch t {
+	case resourcev1.ResourceType_RESOURCE_TYPE_MEETING_ROOM:
+		return models.ResourceTypeMeetingRoom, nil
+	case resourcev1.ResourceType_RESOURCE_TYPE_WORKSPACE:
+		return models.ResourceTypeWorkspace, nil
+	case resourcev1.ResourceType_RESOURCE_TYPE_DEVICE:
+		return models.ResourceTypeDevice, nil
+	default:
+		return "", fmt.Errorf("invalid resource type")
+	}
+}
+
+func ProtoTypesToService(types []resourcev1.ResourceType) ([]models.ResourceType, error) {
+	serviceTypes := make([]models.ResourceType, 0, len(types))
+	for _, t := range types {
+		mappedType, err := ProtoTypeToService(t)
+		if err != nil {
+			return nil, err
+		}
+		serviceTypes = append(serviceTypes, mappedType)
+	}
+
+	return serviceTypes, nil
+}
+
 func ProtoStatusToService(s resourcev1.ResourceStatus) models.ResourceStatus {
 	switch s {
 	case resourcev1.ResourceStatus_RESOURCE_STATUS_AVAILABLE:
@@ -102,6 +130,23 @@ func ProtoDetailsToService(details any) any {
 			HasMonitor: d.Workspace.HasMonitor,
 		}
 	case *resourcev1.CreateResourceRequest_Device:
+		return &models.DeviceDetails{
+			DeviceType:   d.Device.DeviceType,
+			SerialNumber: d.Device.SerialNumber,
+			Model:        d.Device.Model,
+			Description:  d.Device.Description,
+		}
+	case *resourcev1.Resource_MeetingRoom:
+		return &models.MeetingRoomDetails{
+			Capacity:      d.MeetingRoom.Capacity,
+			HasProjector:  d.MeetingRoom.HasProjector,
+			HasWhiteboard: d.MeetingRoom.HasWhiteboard,
+		}
+	case *resourcev1.Resource_Workspace:
+		return &models.WorkspaceDetails{
+			HasMonitor: d.Workspace.HasMonitor,
+		}
+	case *resourcev1.Resource_Device:
 		return &models.DeviceDetails{
 			DeviceType:   d.Device.DeviceType,
 			SerialNumber: d.Device.SerialNumber,

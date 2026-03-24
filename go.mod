@@ -6,6 +6,7 @@ require (
 	github.com/acyushka/oregon-infra v0.0.0-20260312051127-8d9c91ae29f2
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/lib/pq v1.10.9
+	golang.org/x/sync v0.19.0
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
 )

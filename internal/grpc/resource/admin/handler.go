@@ -36,9 +36,14 @@ func (s *ServerAPI) CreateResource(ctx context.Context, in *resourcev1.CreateRes
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	resourceType, err := utils.ProtoTypeToService(in.GetType())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	req := serviceResource.CreateResourceRequest{
 		Name:     in.GetName(),
-		Type:     models.ResourceType(in.GetType()),
+		Type:     resourceType,
 		Location: in.GetLocation(),
 		Details:  utils.ProtoDetailsToService(in.GetDetails()),
 	}
@@ -68,9 +73,9 @@ func (s *ServerAPI) GetResource(ctx context.Context, in *resourcev1.GetResourceR
 }
 
 func (s *ServerAPI) GetResourcesList(ctx context.Context, in *resourcev1.GetResourcesListRequest) (*resourcev1.GetResourcesListResponse, error) {
-	types := make([]models.ResourceType, 0, len(in.GetTypes()))
-	for _, t := range in.GetTypes() {
-		types = append(types, models.ResourceType(t))
+	types, err := utils.ProtoTypesToService(in.GetTypes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	resources, err := s.service.GetResourcesList(ctx, types)

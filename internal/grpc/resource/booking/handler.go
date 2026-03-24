@@ -64,9 +64,9 @@ func (s *ServerAPI) CheckResourceStatus(ctx context.Context, in *resourcev1.Chec
 }
 
 func (s *ServerAPI) GetAvailableResources(ctx context.Context, in *resourcev1.GetAvailableResourcesRequest) (*resourcev1.GetAvailableResourcesResponse, error) {
-	types := make([]models.ResourceType, 0, len(in.GetTypes()))
-	for _, t := range in.GetTypes() {
-		types = append(types, models.ResourceType(t))
+	types, err := utils.ProtoTypesToService(in.GetTypes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	resources, err := s.service.GetAvailableResources(ctx, types, in.GetLocation())
