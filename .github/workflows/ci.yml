@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   lint:
-    uses: OnYyon/oregon-ci-templates/.github/workflows/lint-go.yml@main
+    uses: Oregon-MAI/oregon-ci-templates/.github/workflows/lint-go.yml@main
     secrets: inherit
     with:
       go-version: "1.26"
@@ -22,7 +22,7 @@ jobs:
       fail-on-error: true
 
   test:
-    uses: OnYyon/oregon-ci-templates/.github/workflows/test-go.yml@main
+    uses: Oregon-MAI/oregon-ci-templates/.github/workflows/test-go.yml@main
     with:
       go-version: "1.26"
       test-packages: "./..."
@@ -32,7 +32,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: OnYyon/oregon-ci-templates/.github/workflows/docker-push.yml@main
+    uses: Oregon-MAI/oregon-ci-templates/.github/workflows/docker-push.yml@main
     secrets: inherit
     with:
       push_to_registry: ${{
