@@ -31,6 +31,20 @@ docker compose down
 go run ./cmd/resource -config ./config/local.yml
 ```
 
+## Тесты
+
+Прогон всех тестов:
+
+```bash
+go test ./...
+```
+
+Покрытие по ключевым пакетам:
+
+```bash
+go test ./internal/service/resource ./internal/grpc/resource/public ./internal/grpc/resource/booking ./internal/grpc/resource/utils -cover
+```
+
 ## Список ручек
 
 ### `ResourcePublicService`
