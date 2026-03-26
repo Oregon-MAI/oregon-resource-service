@@ -24,7 +24,6 @@ func TestProtoTypeToService(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -86,7 +85,6 @@ func TestServiceStatusToProto(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ServiceStatusToProto(tt.in); got != tt.want {
@@ -111,7 +109,6 @@ func TestServiceTypeToProto(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ServiceTypeToProto(tt.in); got != tt.want {
@@ -137,7 +134,6 @@ func TestProtoStatusToService(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ProtoStatusToService(tt.in); got != tt.want {
@@ -150,76 +146,97 @@ func TestProtoStatusToService(t *testing.T) {
 func TestProtoDetailsToService(t *testing.T) {
 	t.Parallel()
 
-	details := ProtoDetailsToService(&resourcev1.CreateResourceRequest_MeetingRoom{
-		MeetingRoom: &resourcev1.MeetingRoomDetails{
-			Capacity:      12,
-			HasProjector:  true,
-			HasWhiteboard: true,
+	tests := []struct {
+		name   string
+		in     any
+		assert func(*testing.T, any)
+	}{
+		{
+			name: "meeting room from create",
+			in: &resourcev1.CreateResourceRequest_MeetingRoom{
+				MeetingRoom: &resourcev1.MeetingRoomDetails{Capacity: 12, HasProjector: true, HasWhiteboard: true},
+			},
+			assert: func(t *testing.T, got any) { assertMeetingRoomDetails(t, got, 12, true, true) },
 		},
-	})
+		{
+			name:   "workspace from create",
+			in:     &resourcev1.CreateResourceRequest_Workspace{Workspace: &resourcev1.WorkspaceDetails{HasMonitor: true}},
+			assert: func(t *testing.T, got any) { assertWorkspaceDetails(t, got, true) },
+		},
+		{
+			name:   "device from create",
+			in:     &resourcev1.CreateResourceRequest_Device{Device: &resourcev1.DeviceDetails{DeviceType: "laptop", Model: "m1"}},
+			assert: func(t *testing.T, got any) { assertDeviceDetails(t, got, "laptop", "m1") },
+		},
+		{
+			name:   "workspace from resource",
+			in:     &resourcev1.Resource_Workspace{Workspace: &resourcev1.WorkspaceDetails{HasMonitor: true}},
+			assert: func(t *testing.T, got any) { assertWorkspaceDetails(t, got, true) },
+		},
+		{
+			name:   "meeting room from resource",
+			in:     &resourcev1.Resource_MeetingRoom{MeetingRoom: &resourcev1.MeetingRoomDetails{Capacity: 4}},
+			assert: func(t *testing.T, got any) { assertMeetingRoomDetails(t, got, 4, false, false) },
+		},
+		{
+			name:   "device from resource",
+			in:     &resourcev1.Resource_Device{Device: &resourcev1.DeviceDetails{DeviceType: "monitor", Model: "m2"}},
+			assert: func(t *testing.T, got any) { assertDeviceDetails(t, got, "monitor", "m2") },
+		},
+		{
+			name: "unknown details",
+			in:   nil,
+			assert: func(t *testing.T, got any) {
+				t.Helper()
+				if got != nil {
+					t.Fatalf("expected nil, got %T", got)
+				}
+			},
+		},
+	}
 
-	room, ok := details.(*models.MeetingRoomDetails)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tt.assert(t, ProtoDetailsToService(tt.in))
+		})
+	}
+}
+
+func assertMeetingRoomDetails(t *testing.T, got any, capacity int32, hasProjector bool, hasWhiteboard bool) {
+	t.Helper()
+
+	d, ok := got.(*models.MeetingRoomDetails)
 	if !ok {
-		t.Fatalf("expected *models.MeetingRoomDetails, got %T", details)
+		t.Fatalf("expected *models.MeetingRoomDetails, got %T", got)
 	}
-	if room.Capacity != 12 || !room.HasProjector || !room.HasWhiteboard {
-		t.Fatalf("unexpected mapped details: %+v", room)
+	if d.Capacity != capacity || d.HasProjector != hasProjector || d.HasWhiteboard != hasWhiteboard {
+		t.Fatalf("unexpected meeting room details: %+v", d)
 	}
+}
 
-	t.Run("workspace from create", func(t *testing.T) {
-		t.Parallel()
+func assertWorkspaceDetails(t *testing.T, got any, hasMonitor bool) {
+	t.Helper()
 
-		d := ProtoDetailsToService(&resourcev1.CreateResourceRequest_Workspace{Workspace: &resourcev1.WorkspaceDetails{HasMonitor: true}})
-		ws, ok := d.(*models.WorkspaceDetails)
-		if !ok || !ws.HasMonitor {
-			t.Fatalf("unexpected workspace mapping: %#v", d)
-		}
-	})
+	d, ok := got.(*models.WorkspaceDetails)
+	if !ok {
+		t.Fatalf("expected *models.WorkspaceDetails, got %T", got)
+	}
+	if d.HasMonitor != hasMonitor {
+		t.Fatalf("unexpected workspace details: %+v", d)
+	}
+}
 
-	t.Run("device from create", func(t *testing.T) {
-		t.Parallel()
+func assertDeviceDetails(t *testing.T, got any, deviceType string, model string) {
+	t.Helper()
 
-		d := ProtoDetailsToService(&resourcev1.CreateResourceRequest_Device{Device: &resourcev1.DeviceDetails{DeviceType: "laptop", Model: "m1"}})
-		dev, ok := d.(*models.DeviceDetails)
-		if !ok || dev.DeviceType != "laptop" || dev.Model != "m1" {
-			t.Fatalf("unexpected device mapping: %#v", d)
-		}
-	})
-
-	t.Run("workspace from resource", func(t *testing.T) {
-		t.Parallel()
-
-		d := ProtoDetailsToService(&resourcev1.Resource_Workspace{Workspace: &resourcev1.WorkspaceDetails{HasMonitor: true}})
-		if _, ok := d.(*models.WorkspaceDetails); !ok {
-			t.Fatalf("expected workspace details, got %T", d)
-		}
-	})
-
-	t.Run("meeting room from resource", func(t *testing.T) {
-		t.Parallel()
-
-		d := ProtoDetailsToService(&resourcev1.Resource_MeetingRoom{MeetingRoom: &resourcev1.MeetingRoomDetails{Capacity: 4}})
-		if _, ok := d.(*models.MeetingRoomDetails); !ok {
-			t.Fatalf("expected meeting room details, got %T", d)
-		}
-	})
-
-	t.Run("device from resource", func(t *testing.T) {
-		t.Parallel()
-
-		d := ProtoDetailsToService(&resourcev1.Resource_Device{Device: &resourcev1.DeviceDetails{DeviceType: "monitor"}})
-		if _, ok := d.(*models.DeviceDetails); !ok {
-			t.Fatalf("expected device details, got %T", d)
-		}
-	})
-
-	t.Run("unknown details", func(t *testing.T) {
-		t.Parallel()
-
-		if got := ProtoDetailsToService(nil); got != nil {
-			t.Fatalf("expected nil, got %T", got)
-		}
-	})
+	d, ok := got.(*models.DeviceDetails)
+	if !ok {
+		t.Fatalf("expected *models.DeviceDetails, got %T", got)
+	}
+	if d.DeviceType != deviceType || d.Model != model {
+		t.Fatalf("unexpected device details: %+v", d)
+	}
 }
 
 func TestMapServiceResourceToProto(t *testing.T) {
@@ -275,4 +292,3 @@ func TestMapServiceResourceToProto_DetailsByType(t *testing.T) {
 		t.Fatalf("unexpected device mapping: %+v", device.GetDevice())
 	}
 }
-

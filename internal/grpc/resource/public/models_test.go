@@ -74,7 +74,6 @@ func TestValidateCreateResourceRequest(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -129,4 +128,3 @@ func TestBuildUpdateResourceRequest_UnknownMaskPathIgnored(t *testing.T) {
 		t.Fatalf("expected zero-value update request, got %+v", out)
 	}
 }
-

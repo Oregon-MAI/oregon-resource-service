@@ -446,4 +446,3 @@ func TestPublicDeleteResource(t *testing.T) {
 		}
 	})
 }
-

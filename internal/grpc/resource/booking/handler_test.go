@@ -256,4 +256,3 @@ func TestBookingUpdateResourceOccupancy_InternalError(t *testing.T) {
 		t.Fatalf("expected Internal, got %v (err=%v)", status.Code(err), err)
 	}
 }
-

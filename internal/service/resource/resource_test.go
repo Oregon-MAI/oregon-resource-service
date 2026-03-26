@@ -9,13 +9,13 @@ import (
 )
 
 type fakeRepository struct {
-	createResourceFn         func(ctx context.Context, resource *models.Resource) (*models.Resource, error)
-	getResourceFn            func(ctx context.Context, resourceID string) (*models.Resource, error)
-	getResourcesListFn       func(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error)
-	getAvailableResourcesFn  func(ctx context.Context, types []models.ResourceType, location string) ([]*models.Resource, error)
-	updateResourceFn         func(ctx context.Context, resourceID string, in UpdateResourceRequest) (*models.Resource, error)
-	deleteResourceFn         func(ctx context.Context, resourceID string) error
-	changeResourceStatusFn   func(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error)
+	createResourceFn        func(ctx context.Context, resource *models.Resource) (*models.Resource, error)
+	getResourceFn           func(ctx context.Context, resourceID string) (*models.Resource, error)
+	getResourcesListFn      func(ctx context.Context, types []models.ResourceType) ([]*models.Resource, error)
+	getAvailableResourcesFn func(ctx context.Context, types []models.ResourceType, location string) ([]*models.Resource, error)
+	updateResourceFn        func(ctx context.Context, resourceID string, in UpdateResourceRequest) (*models.Resource, error)
+	deleteResourceFn        func(ctx context.Context, resourceID string) error
+	changeResourceStatusFn  func(ctx context.Context, resourceID string, status models.ResourceStatus, reason string) (*models.Resource, error)
 }
 
 func (f *fakeRepository) CreateResource(ctx context.Context, resource *models.Resource) (*models.Resource, error) {
@@ -126,7 +126,6 @@ func TestServiceUpdateResource_ErrorMapping(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -214,149 +213,145 @@ func TestServiceCheckResourceStatus(t *testing.T) {
 	})
 }
 
-func TestServiceUpdateResourceOccupancy(t *testing.T) {
+func TestServiceUpdateResourceOccupancy_RejectMaintenance(t *testing.T) {
 	t.Parallel()
 
-	t.Run("reject maintenance", func(t *testing.T) {
-		t.Parallel()
+	called := 0
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return &models.Resource{Status: models.ResourceStatusMaintenance}, nil
+		},
+		changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
+			called++
+			return nil, nil
+		},
+	}
+	svc := NewService(repo, nil)
 
-		called := 0
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return &models.Resource{Status: models.ResourceStatusMaintenance}, nil
-			},
-			changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
-				called++
-				return nil, nil
-			},
-		}
-		svc := NewService(repo, nil)
+	_, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
+	if !errors.Is(err, models.ErrInvalidStatus) {
+		t.Fatalf("expected ErrInvalidStatus, got %v", err)
+	}
+	if called != 0 {
+		t.Fatalf("expected ChangeResourceStatus not to be called, got %d", called)
+	}
+}
 
-		_, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
-		if !errors.Is(err, models.ErrInvalidStatus) {
-			t.Fatalf("expected ErrInvalidStatus, got %v", err)
-		}
-		if called != 0 {
-			t.Fatalf("expected ChangeResourceStatus not to be called, got %d", called)
-		}
-	})
+func TestServiceUpdateResourceOccupancy_NoOpWhenSameStatus(t *testing.T) {
+	t.Parallel()
 
-	t.Run("no-op when same status", func(t *testing.T) {
-		t.Parallel()
+	called := 0
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return &models.Resource{Status: models.ResourceStatusOccupied}, nil
+		},
+		changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
+			called++
+			return &models.Resource{Status: models.ResourceStatusOccupied}, nil
+		},
+	}
+	svc := NewService(repo, nil)
 
-		called := 0
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return &models.Resource{Status: models.ResourceStatusOccupied}, nil
-			},
-			changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
-				called++
-				return &models.Resource{Status: models.ResourceStatusOccupied}, nil
-			},
-		}
-		svc := NewService(repo, nil)
+	status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
+	if err != nil {
+		t.Fatalf("UpdateResourceOccupancy() error = %v", err)
+	}
+	if status != models.ResourceStatusOccupied {
+		t.Fatalf("expected occupied, got %q", status)
+	}
+	if called != 0 {
+		t.Fatalf("expected ChangeResourceStatus not to be called, got %d", called)
+	}
+}
 
-		status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
-		if err != nil {
-			t.Fatalf("UpdateResourceOccupancy() error = %v", err)
-		}
-		if status != models.ResourceStatusOccupied {
-			t.Fatalf("expected occupied, got %q", status)
-		}
-		if called != 0 {
-			t.Fatalf("expected ChangeResourceStatus not to be called, got %d", called)
-		}
-	})
+func TestServiceUpdateResourceOccupancy_TransitionToOccupied(t *testing.T) {
+	t.Parallel()
 
-	t.Run("transition available to occupied", func(t *testing.T) {
-		t.Parallel()
+	called := 0
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return &models.Resource{Status: models.ResourceStatusAvailable}, nil
+		},
+		changeResourceStatusFn: func(_ context.Context, _ string, status models.ResourceStatus, _ string) (*models.Resource, error) {
+			called++
+			if status != models.ResourceStatusOccupied {
+				t.Fatalf("expected occupied status, got %q", status)
+			}
+			return &models.Resource{Status: models.ResourceStatusOccupied}, nil
+		},
+	}
+	svc := NewService(repo, nil)
 
-		called := 0
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return &models.Resource{Status: models.ResourceStatusAvailable}, nil
-			},
-			changeResourceStatusFn: func(_ context.Context, _ string, status models.ResourceStatus, _ string) (*models.Resource, error) {
-				called++
-				if status != models.ResourceStatusOccupied {
-					t.Fatalf("expected occupied status, got %q", status)
-				}
-				return &models.Resource{Status: models.ResourceStatusOccupied}, nil
-			},
-		}
-		svc := NewService(repo, nil)
+	status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
+	if err != nil {
+		t.Fatalf("UpdateResourceOccupancy() error = %v", err)
+	}
+	if status != models.ResourceStatusOccupied {
+		t.Fatalf("expected occupied, got %q", status)
+	}
+	if called != 1 {
+		t.Fatalf("expected ChangeResourceStatus to be called once, got %d", called)
+	}
+}
 
-		status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
-		if err != nil {
-			t.Fatalf("UpdateResourceOccupancy() error = %v", err)
-		}
-		if status != models.ResourceStatusOccupied {
-			t.Fatalf("expected occupied, got %q", status)
-		}
-		if called != 1 {
-			t.Fatalf("expected ChangeResourceStatus to be called once, got %d", called)
-		}
-	})
+func TestServiceUpdateResourceOccupancy_NotFoundOnGetResource(t *testing.T) {
+	t.Parallel()
 
-	t.Run("not found on get resource", func(t *testing.T) {
-		t.Parallel()
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return nil, models.ErrNotFound
+		},
+	}
+	svc := NewService(repo, nil)
 
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return nil, models.ErrNotFound
-			},
-		}
-		svc := NewService(repo, nil)
+	_, err := svc.UpdateResourceOccupancy(context.Background(), "missing", true)
+	if !errors.Is(err, models.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
 
-		_, err := svc.UpdateResourceOccupancy(context.Background(), "missing", true)
-		if !errors.Is(err, models.ErrNotFound) {
-			t.Fatalf("expected ErrNotFound, got %v", err)
-		}
-	})
+func TestServiceUpdateResourceOccupancy_ChangeStatusFailed(t *testing.T) {
+	t.Parallel()
 
-	t.Run("change status failed", func(t *testing.T) {
-		t.Parallel()
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return &models.Resource{Status: models.ResourceStatusAvailable}, nil
+		},
+		changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
+			return nil, errors.New("update failed")
+		},
+	}
+	svc := NewService(repo, nil)
 
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return &models.Resource{Status: models.ResourceStatusAvailable}, nil
-			},
-			changeResourceStatusFn: func(_ context.Context, _ string, _ models.ResourceStatus, _ string) (*models.Resource, error) {
-				return nil, errors.New("update failed")
-			},
-		}
-		svc := NewService(repo, nil)
+	_, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
 
-		_, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", true)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
+func TestServiceUpdateResourceOccupancy_SetAvailableWhenNotOccupied(t *testing.T) {
+	t.Parallel()
 
-	t.Run("set available when not occupied", func(t *testing.T) {
-		t.Parallel()
+	repo := &fakeRepository{
+		getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
+			return &models.Resource{Status: models.ResourceStatusOccupied}, nil
+		},
+		changeResourceStatusFn: func(_ context.Context, _ string, status models.ResourceStatus, _ string) (*models.Resource, error) {
+			if status != models.ResourceStatusAvailable {
+				t.Fatalf("expected available status, got %q", status)
+			}
+			return &models.Resource{Status: models.ResourceStatusAvailable}, nil
+		},
+	}
+	svc := NewService(repo, nil)
 
-		repo := &fakeRepository{
-			getResourceFn: func(_ context.Context, _ string) (*models.Resource, error) {
-				return &models.Resource{Status: models.ResourceStatusOccupied}, nil
-			},
-			changeResourceStatusFn: func(_ context.Context, _ string, status models.ResourceStatus, _ string) (*models.Resource, error) {
-				if status != models.ResourceStatusAvailable {
-					t.Fatalf("expected available status, got %q", status)
-				}
-				return &models.Resource{Status: models.ResourceStatusAvailable}, nil
-			},
-		}
-		svc := NewService(repo, nil)
-
-		status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", false)
-		if err != nil {
-			t.Fatalf("UpdateResourceOccupancy() error = %v", err)
-		}
-		if status != models.ResourceStatusAvailable {
-			t.Fatalf("expected available, got %q", status)
-		}
-	})
+	status, err := svc.UpdateResourceOccupancy(context.Background(), "res-1", false)
+	if err != nil {
+		t.Fatalf("UpdateResourceOccupancy() error = %v", err)
+	}
+	if status != models.ResourceStatusAvailable {
+		t.Fatalf("expected available, got %q", status)
+	}
 }
 
 func TestServiceGetResource(t *testing.T) {
@@ -507,4 +502,3 @@ func TestServiceChangeResourceStatus(t *testing.T) {
 		}
 	})
 }
-
