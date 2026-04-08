@@ -173,6 +173,6 @@ func rpcLoggingUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 			)
 		}
 
-		return resp, nil
+		return resp, err
 	}
 }
