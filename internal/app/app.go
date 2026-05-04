@@ -26,7 +26,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 	if err != nil {
 		return nil, fmt.Errorf("app.New: init postgres: %w", err)
 	}
-	log.Info("postgres initialized")
+	log.InfoContext(ctx, "postgres initialized")
 
 	resourceService := service.NewService(repo, log)
 
@@ -50,17 +50,17 @@ func (a *App) MustRun() {
 }
 
 func (a *App) Run() error {
-	a.log.Info("starting grpc app")
+	a.log.InfoContext(context.Background(), "starting grpc app")
 	return a.GRPC.Run()
 }
 
 func (a *App) Stop() error {
-	a.log.Info("stopping grpc app")
+	a.log.InfoContext(context.Background(), "stopping grpc app")
 	a.GRPC.Stop()
 	if err := a.repo.Close(); err != nil {
 		return fmt.Errorf("app.Stop: close repository: %w", err)
 	}
-	a.log.Info("repository closed")
+	a.log.InfoContext(context.Background(), "repository closed")
 
 	return nil
 }

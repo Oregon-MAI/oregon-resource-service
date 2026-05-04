@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Env      string   `yaml:"env" env-default:"local"`
 	GRPC     GRPC     `yaml:"grpc"`
+	Tracer   Tracer   `yaml:"tracer"`
 	Database Database `yaml:"database"`
 }
 
@@ -21,6 +22,12 @@ type GRPC struct {
 
 type ServiceConfig struct {
 	Port int `yaml:"port"`
+}
+
+type Tracer struct {
+	EndPoint    string  `yaml:"end-point" env:"END_POINT"`
+	Insecure    bool    `yaml:"insecure" env:"INSECURE"`
+	SampleRatio float64 `yaml:"sample-ratio" env:"SAMPLE_RATION"`
 }
 
 type Database struct {

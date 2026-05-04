@@ -19,6 +19,8 @@ services:
     ports:
       - "60008:60008"
       - "60009:60009"
+    volumes:
+      - ./logs:/app/logs
     restart: unless-stopped
 
 volumes:
