@@ -92,7 +92,7 @@ func (a *App) Run() error {
 	for _, unit := range units {
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", unit.port))
 		if err != nil {
-			a.Stop()
+			a.Stop(context.Background())
 			return fmt.Errorf("%s: listen %s: %w", op, unit.name, err)
 		}
 		unit.listener = listener
@@ -117,7 +117,9 @@ func (a *App) Run() error {
 				return nil
 			}
 
-			stopOnce.Do(a.Stop)
+			stopOnce.Do(func() {
+				a.Stop(context.Background())
+			})
 			a.log.ErrorContext(context.Background(), "grpc server serve failed", slog.String("server", u.name), slog.Any("error", err))
 
 			return fmt.Errorf("%s: serve %s: %w", op, u.name, err)
@@ -127,15 +129,15 @@ func (a *App) Run() error {
 	return group.Wait()
 }
 
-func (a *App) Stop() {
-	a.log.InfoContext(context.Background(), "graceful stopping grpc servers")
+func (a *App) Stop(ctx context.Context) {
+	a.log.InfoContext(ctx, "graceful stopping grpc servers")
 
 	var wg sync.WaitGroup
 	for _, unit := range []*serverUnit{a.booking, a.public} {
 		wg.Add(1)
 		go func(s *serverUnit) {
 			defer wg.Done()
-			a.log.InfoContext(context.Background(), "stopping grpc server", slog.String("server", s.name), slog.Int("port", s.port))
+			a.log.InfoContext(ctx, "stopping grpc server", slog.String("server", s.name), slog.Int("port", s.port))
 			s.server.GracefulStop()
 		}(unit)
 	}
@@ -151,7 +153,7 @@ func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	) (resp any, err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				log.ErrorContext(context.Background(), "panic recovered in grpc handler", slog.String("method", info.FullMethod), slog.Any("panic", recovered))
+				log.ErrorContext(ctx, "panic recovered in grpc handler", slog.String("method", info.FullMethod), slog.Any("panic", recovered))
 				err = status.Error(codes.Internal, "internal error")
 			}
 		}()
@@ -171,7 +173,7 @@ func rpcLoggingUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 
 		if err != nil {
 			log.WarnContext(
-				context.Background(),
+				ctx,
 				"grpc request failed",
 				slog.String("method", info.FullMethod),
 				slog.String("grpc_code", status.Code(err).String()),

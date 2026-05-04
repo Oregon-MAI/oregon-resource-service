@@ -16,6 +16,7 @@ import (
 
 func main() {
 	cfg := config.MustLoad()
+	ctx := context.Background()
 
 	if err := os.MkdirAll("logs", 0o750); err != nil {
 		panic(err)
@@ -26,7 +27,7 @@ func main() {
 	}
 	defer func() {
 		if err := logFile.Close(); err != nil {
-			slog.ErrorContext(context.Background(), "failed to close log file", slog.Any("error", err))
+			slog.ErrorContext(ctx, "failed to close log file", slog.Any("error", err))
 		}
 	}()
 
@@ -41,48 +42,47 @@ func main() {
 	log := logger.New(logCfg)
 	slog.SetDefault(log)
 
-	tracerProvider, err := tracer.New(context.Background(), &tracer.Config{
+	tracerProvider, err := tracer.New(ctx, &tracer.Config{
 		ServiceName: "ResourceService",
 		EndPoint:    cfg.Tracer.EndPoint,
 		Insecure:    cfg.Tracer.Insecure,
 		SampleRatio: cfg.Tracer.SampleRatio,
 	})
 	if err != nil {
-		log.ErrorContext(context.Background(), "failed to init tracer", slog.Any("error", err))
+		log.ErrorContext(ctx, "failed to init tracer", slog.Any("error", err))
 	}
 
 	defer func() {
-		if err := tracerProvider.Shutdown(context.Background()); err != nil {
-			log.ErrorContext(context.Background(), "failed to shutdown tracer", slog.Any("error", err))
+		if err := tracerProvider.Shutdown(ctx); err != nil {
+			log.ErrorContext(ctx, "failed to shutdown tracer", slog.Any("error", err))
 		}
 	}()
 
-	application, err := app.New(context.Background(), cfg, log)
+	application, err := app.New(ctx, cfg, log)
 	if err != nil {
-		log.ErrorContext(context.Background(), "failed to init app", slog.Any("error", err))
+		log.ErrorContext(ctx, "failed to init app", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	log.InfoContext(context.Background(), "application initialized")
+	log.InfoContext(ctx, "application initialized")
 
-	stopCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	stopCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
 		<-stopCtx.Done()
-		log.InfoContext(context.Background(), "shutdown signal received")
+		log.InfoContext(stopCtx, "shutdown signal received")
 
-		if err := application.Stop(); err != nil {
-			log.ErrorContext(context.Background(), "failed to stop app", slog.Any("error", err))
+		if err := application.Stop(stopCtx); err != nil {
+			log.ErrorContext(stopCtx, "failed to stop app", slog.Any("error", err))
 			return
 		}
 
-		log.InfoContext(context.Background(), "application stopped")
+		log.InfoContext(stopCtx, "application stopped")
 	}()
 
 	if err := application.Run(); err != nil {
-		log.ErrorContext(context.Background(), "application run failed", slog.Any("error", err))
+		log.ErrorContext(ctx, "application run failed", slog.Any("error", err))
 		os.Exit(1)
 	}
-
 }

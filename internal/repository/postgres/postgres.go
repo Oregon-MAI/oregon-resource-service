@@ -48,10 +48,10 @@ func New(ctx context.Context, dsn string, log *slog.Logger) (*Repository, error)
 	}, nil
 }
 
-func (r *Repository) Close() error {
+func (r *Repository) Close(ctx context.Context) error {
 	err := r.db.Close()
 	if err != nil {
-		r.log.ErrorContext(context.Background(), "postgres close failed", slog.Any("error", err))
+		r.log.ErrorContext(ctx, "postgres close failed", slog.Any("error", err))
 	}
 
 	return err

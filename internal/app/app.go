@@ -54,13 +54,13 @@ func (a *App) Run() error {
 	return a.GRPC.Run()
 }
 
-func (a *App) Stop() error {
-	a.log.InfoContext(context.Background(), "stopping grpc app")
-	a.GRPC.Stop()
-	if err := a.repo.Close(); err != nil {
+func (a *App) Stop(ctx context.Context) error {
+	a.log.InfoContext(ctx, "stopping grpc app")
+	a.GRPC.Stop(ctx)
+	if err := a.repo.Close(ctx); err != nil {
 		return fmt.Errorf("app.Stop: close repository: %w", err)
 	}
-	a.log.InfoContext(context.Background(), "repository closed")
+	a.log.InfoContext(ctx, "repository closed")
 
 	return nil
 }
