@@ -2,6 +2,7 @@ package public
 
 import (
 	"errors"
+	"strings"
 
 	resourcev1 "github.com/acyushka/oregon-infra/contracts/gen/go/resource"
 	"github.com/acyushka/oregon-resource-service/internal/grpc/resource/utils"
@@ -37,12 +38,12 @@ func validateCreateResourceRequest(req *resourcev1.CreateResourceRequest) error 
 func buildUpdateResourceRequest(in *resourcev1.UpdateResourceRequest) serviceResource.UpdateResourceRequest {
 	var req serviceResource.UpdateResourceRequest
 	for _, path := range in.GetFieldMask().GetPaths() {
-		switch path {
-		case "name":
+		switch {
+		case path == "name":
 			req.Name = &in.GetResource().Name
-		case "location":
+		case path == "location":
 			req.Location = &in.GetResource().Location
-		case "details":
+		case path == "details" || strings.HasPrefix(path, "details."):
 			req.Details = utils.ProtoDetailsToService(in.GetResource().GetDetails())
 		}
 	}

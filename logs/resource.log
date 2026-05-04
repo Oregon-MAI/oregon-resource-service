@@ -6,3 +6,28 @@
 {"time":"2026-05-04T20:18:38.278988244Z","level":"INFO","msg":"grpc listener started","service":"resource-service","env":"local","server":"public","addr":"[::]:60009"}
 {"time":"2026-05-04T20:18:38.279502872Z","level":"INFO","msg":"grpc server serving","service":"resource-service","env":"local","server":"public","port":60009}
 {"time":"2026-05-04T20:18:38.279552375Z","level":"INFO","msg":"grpc server serving","service":"resource-service","env":"local","server":"booking","port":60008}
+{"time":"2026-05-04T20:53:32.376540014Z","level":"INFO","msg":"shutdown signal received","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:32.377726816Z","level":"INFO","msg":"stopping grpc app","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:32.377969559Z","level":"INFO","msg":"graceful stopping grpc servers","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:32.378300728Z","level":"INFO","msg":"stopping grpc server","service":"resource-service","env":"local","server":"public","port":60009}
+{"time":"2026-05-04T20:53:32.378375757Z","level":"INFO","msg":"stopping grpc server","service":"resource-service","env":"local","server":"booking","port":60008}
+{"time":"2026-05-04T20:53:32.379463001Z","level":"INFO","msg":"grpc server stopped","service":"resource-service","env":"local","server":"public"}
+{"time":"2026-05-04T20:53:32.379521137Z","level":"INFO","msg":"grpc server stopped","service":"resource-service","env":"local","server":"booking"}
+{"time":"2026-05-04T20:53:32.379842035Z","level":"INFO","msg":"repository closed","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:32.380479584Z","level":"INFO","msg":"application stopped","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:42.002300591Z","level":"INFO","msg":"postgres initialized","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:42.002856553Z","level":"INFO","msg":"application initialized","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:42.003750635Z","level":"INFO","msg":"starting grpc app","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:53:42.004137973Z","level":"INFO","msg":"starting grpc servers","service":"resource-service","env":"local","servers_count":2}
+{"time":"2026-05-04T20:53:42.009861564Z","level":"INFO","msg":"grpc listener started","service":"resource-service","env":"local","server":"booking","addr":"[::]:60008"}
+{"time":"2026-05-04T20:53:42.010412115Z","level":"INFO","msg":"grpc listener started","service":"resource-service","env":"local","server":"public","addr":"[::]:60009"}
+{"time":"2026-05-04T20:53:42.010947892Z","level":"INFO","msg":"grpc server serving","service":"resource-service","env":"local","server":"public","port":60009}
+{"time":"2026-05-04T20:53:42.01108059Z","level":"INFO","msg":"grpc server serving","service":"resource-service","env":"local","server":"booking","port":60008}
+{"time":"2026-05-04T20:53:54.352669532Z","level":"INFO","msg":"resource created","service":"resource-service","env":"local","resource_id":"f98ba6ec-36b2-4032-bcab-7e3cf71e62df","type":"workspace","trace_id":"b75ecc5a973d97b331e7580dd1d088f8","span_id":"867124a57084d50a"}
+{"time":"2026-05-04T20:53:56.981553663Z","level":"INFO","msg":"traces export: Post \"http://localhost:4318/v1/traces\": dial tcp [::1]:4318: connect: connection refused","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:54:26.766006587Z","level":"INFO","msg":"resource updated","service":"resource-service","env":"local","resource_id":"f98ba6ec-36b2-4032-bcab-7e3cf71e62df","trace_id":"2424c3f28284220690166d1c9bbba8d5","span_id":"31bb4550179149b2"}
+{"time":"2026-05-04T20:54:27.002348586Z","level":"INFO","msg":"traces export: Post \"http://localhost:4318/v1/traces\": dial tcp [::1]:4318: connect: connection refused","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:55:08.86476253Z","level":"INFO","msg":"resource updated","service":"resource-service","env":"local","resource_id":"f98ba6ec-36b2-4032-bcab-7e3cf71e62df","trace_id":"a3b0fae2c8f01cc182a45c37b258a3df","span_id":"98701cbc4d93b2d6"}
+{"time":"2026-05-04T20:55:12.034349749Z","level":"INFO","msg":"traces export: Post \"http://localhost:4318/v1/traces\": dial tcp [::1]:4318: connect: connection refused","service":"resource-service","env":"local"}
+{"time":"2026-05-04T20:55:30.71374275Z","level":"INFO","msg":"resource updated","service":"resource-service","env":"local","resource_id":"f98ba6ec-36b2-4032-bcab-7e3cf71e62df","trace_id":"cb09e8ec134f0339ea145de1d8dc5bc9","span_id":"4778f99b07c2091d"}
+{"time":"2026-05-04T20:55:32.048976601Z","level":"INFO","msg":"traces export: Post \"http://localhost:4318/v1/traces\": dial tcp [::1]:4318: connect: connection refused","service":"resource-service","env":"local"}
