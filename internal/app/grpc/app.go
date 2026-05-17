@@ -10,12 +10,15 @@ import (
 
 	bookinghandler "github.com/acyushka/oregon-resource-service/internal/grpc/resource/booking"
 	publichandler "github.com/acyushka/oregon-resource-service/internal/grpc/resource/public"
+	"github.com/acyushka/oregon-resource-service/internal/metrics"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 type App struct {
@@ -46,15 +49,33 @@ func New(
 	bookingServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			grpc_prometheus.UnaryServerInterceptor,
+			inFlightUnaryInterceptor(),
 			rpcLoggingUnaryInterceptor(log),
 			recoveryUnaryInterceptor(log),
-		))
+		),
+		grpc.ChainStreamInterceptor(
+			grpc_prometheus.StreamServerInterceptor,
+			inFlightStreamInterceptor(),
+		),
+	)
 	publicServer := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
+			grpc_prometheus.UnaryServerInterceptor,
+			inFlightUnaryInterceptor(),
 			rpcLoggingUnaryInterceptor(log),
 			recoveryUnaryInterceptor(log),
-		))
+		),
+		grpc.ChainStreamInterceptor(
+			grpc_prometheus.StreamServerInterceptor,
+			inFlightStreamInterceptor(),
+		),
+	)
+
+	grpc_prometheus.EnableHandlingTimeHistogram()
+	grpc_prometheus.Register(bookingServer)
+	grpc_prometheus.Register(publicServer)
 
 	reflection.Register(bookingServer)
 	reflection.Register(publicServer)
@@ -182,5 +203,33 @@ func rpcLoggingUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		}
 
 		return resp, err
+	}
+}
+
+func inFlightUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		metrics.GrpcInFlight.WithLabelValues(info.FullMethod).Inc()
+		defer metrics.GrpcInFlight.WithLabelValues(info.FullMethod).Dec()
+
+		return handler(ctx, req)
+	}
+}
+
+func inFlightStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(
+		srv any,
+		stream grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		metrics.GrpcInFlight.WithLabelValues(info.FullMethod).Inc()
+		defer metrics.GrpcInFlight.WithLabelValues(info.FullMethod).Dec()
+
+		return handler(srv, stream)
 	}
 }

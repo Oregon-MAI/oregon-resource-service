@@ -6,15 +6,17 @@ import (
 	"log/slog"
 
 	grpcapp "github.com/acyushka/oregon-resource-service/internal/app/grpc"
+	metricsapp "github.com/acyushka/oregon-resource-service/internal/app/metrics"
 	"github.com/acyushka/oregon-resource-service/internal/config"
 	"github.com/acyushka/oregon-resource-service/internal/repository/postgres"
 	service "github.com/acyushka/oregon-resource-service/internal/service/resource"
 )
 
 type App struct {
-	GRPC *grpcapp.App
-	repo *postgres.Repository
-	log  *slog.Logger
+	GRPC    *grpcapp.App
+	Metrics *metricsapp.App
+	repo    *postgres.Repository
+	log     *slog.Logger
 }
 
 func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error) {
@@ -37,11 +39,13 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		resourceService,
 		log,
 	)
+	metricsServer := metricsapp.New(cfg.Metrics.Port, log)
 
 	return &App{
-		GRPC: grpcServer,
-		repo: repo,
-		log:  log,
+		GRPC:    grpcServer,
+		Metrics: metricsServer,
+		repo:    repo,
+		log:     log,
 	}, nil
 }
 
@@ -50,6 +54,14 @@ func (a *App) MustRun() {
 }
 
 func (a *App) Run() error {
+	if a.Metrics != nil {
+		go func() {
+			if err := a.Metrics.Run(); err != nil {
+				a.log.ErrorContext(context.Background(), "metrics server stopped", slog.Any("error", err))
+			}
+		}()
+	}
+
 	a.log.InfoContext(context.Background(), "starting grpc app")
 	return a.GRPC.Run()
 }
@@ -61,6 +73,12 @@ func (a *App) Stop(ctx context.Context) error {
 		return fmt.Errorf("app.Stop: close repository: %w", err)
 	}
 	a.log.InfoContext(ctx, "repository closed")
+
+	if a.Metrics != nil {
+		if err := a.Metrics.Stop(ctx); err != nil {
+			a.log.ErrorContext(ctx, "failed to stop metrics server", slog.Any("error", err))
+		}
+	}
 
 	return nil
 }

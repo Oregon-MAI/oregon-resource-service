@@ -16,15 +16,15 @@ services:
     container_name: oregon-resource-service
     depends_on:
       - postgres
+    environment:
+      METRICS_PORT: "9098"
     ports:
       - "60008:60008"
       - "60009:60009"
+      - "9098:9098"
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
 
 volumes:
   pgdata:
-
-
-

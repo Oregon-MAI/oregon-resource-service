@@ -12,6 +12,7 @@ type Config struct {
 	Env      string   `yaml:"env" env-default:"local"`
 	GRPC     GRPC     `yaml:"grpc"`
 	Tracer   Tracer   `yaml:"tracer"`
+	Metrics  Metrics  `yaml:"metrics"`
 	Database Database `yaml:"database"`
 }
 
@@ -28,6 +29,10 @@ type Tracer struct {
 	EndPoint    string  `yaml:"end-point" env:"END_POINT"`
 	Insecure    bool    `yaml:"insecure" env:"INSECURE"`
 	SampleRatio float64 `yaml:"sample-ratio" env:"SAMPLE_RATION"`
+}
+
+type Metrics struct {
+	Port int `yaml:"port" env:"METRICS_PORT" env-default:"9098"`
 }
 
 type Database struct {
