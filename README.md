@@ -63,3 +63,19 @@ go test ./internal/service/resource ./internal/grpc/resource/public ./internal/g
 - `CheckResourceStatus`
 - `GetAvailableResources`
 - `UpdateResourceOccupancy`
+
+## Конфиг
+
+- env - Окружение приложения в режиме локальной разработки
+- grpc.booking.port - Порт gRPC сервера для внутреннего взаимодействия с сервисом бронирования
+- grpc.public.port - Порт публичного gRPC API сервиса ресурсов
+- metrics.port - Порт для сбора метрик (Prometheus)
+- tracer.end-point - Endpoint OpenTelemetry коллектора для отправки трассировки
+- tracer.insecure: true - Отключена проверка SSL сертификата при подключении к трассировщику
+- tracer.sample-ratio: 1.0 - 100% трассировки всех запросов (1.0 = 100%, 0.1 = 10%)
+- database.host - Хост БД
+- database.port - Порт для подключения к PostgreSQL
+- database.user - Пользователь БД
+- database.password - Пароль БД
+- database.name - Имя базы данных
+- database.ssl_mode - Режим SSL
